@@ -1,0 +1,23 @@
+0) Make git repo with remote to avoid copy-pasting between laptop and workstation.
+
+1) Make sure that the script still runs after disconnecting remote connection 
+(that it doesn't kill the terminal)
+
+2) Add the 'force rerun' option to all the other pipeline elements 
+(TPrime, quality metrics)
+
+4) Save 'spike_times_sec' in the sorter folder, where the 'spike_times' are
+
+5) Install CatGT and TPrime on the Linux machine
+
+5) Add Bobmbcell
+
+6) Add UnitRefine
+
+7) Optional - update SpikeInterface and Kilosort?
+
+8) Rerun TPrime for the recording 240308_KK102 ?
+
+
+Already done:
+3) Double check if all important quality metrics from SpikeInterface are implemented

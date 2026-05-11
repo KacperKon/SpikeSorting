@@ -1,0 +1,129 @@
+﻿# =============================================================================
+# Spike sorting pipeline configuration
+# =============================================================================
+# Run the pipeline with: python pipeline.py config.yaml
+# Steps: CatGT -> Kilosort 4 -> SpikeInterface postprocessing -> TPrime
+# =============================================================================
+
+
+# --- Paths ---
+# Set each path to the correct server/mount for your machine.
+#
+# npx_directory : raw SpikeGLX recordings (read only)
+#
+# catgt_read    : location of already-preprocessed CatGT recordings to read from.
+#                 The pipeline checks here first and skips CatGT if output is found.
+#
+# catgt_write   : where new CatGT output is written.
+#                 Must be a location you have write access to.
+#                 Can be the same as catgt_read if you have write access there.
+#
+# output_dir    : destination for Kilosort 4 results and SpikeInterface analyzer.
+#                 Can be on a completely different server.
+#
+# Windows example : Z:\haeslerlabwip2024\raw_data\ephys
+# Linux example   : /mnt/haesler/haeslerlabwip2024/raw_data/ephys
+#
+npx_directory: /home/euclient/haesler/haeslerlabwip2024/raw_data/ephys
+catgt_read:    /home/euclient/haesler/haeslerlabwip2024/preprocessed_data/ephys_sorted
+catgt_write:   /mnt/raidstorage/tmp_kilosort
+output_dir:    /mnt/raidstorage/sort
+
+
+# --- Tool binaries (Linux paths on the sorting workstation) ---
+catgt_bin: /path/to/CatGT    # update: run `which CatGT` to find the path
+tprime_bin: /path/to/TPrime  # update: run `which TPrime` to find the path
+
+
+# --- CatGT settings ---
+# Concatenates triggers, band-pass filters AP and LFP bands, and extracts sync events.
+# -prb_fld / -out_prb_fld : write one sub-folder per probe
+# -apfilter / -lffilter    : Butterworth filter settings (type, order, low_hz, high_hz)
+# -gfix                    : remove DC offset artifacts (amp_threshold, slope, noise)
+catgt_cmd_string: "-prb_fld -out_prb_fld -apfilter=butter,12,300,10000 -lffilter=butter,12,1,500 -gfix=0.4,0.10,0.02"
+
+# NI (analog/digital) channel extraction -- edit to match your sync/TTL wiring.
+# -xa  : extract analog channel as continuous signal
+# -xia : extract analog channel as events
+# -xd  / -xid : extract digital lines / as events
+ni_extract_string: "-xa=0,0,0,1,3,500 -xia=0,0,1,3,3,0 -xd=0,0,-1,1,50 -xid=0,0,-1,2,1.7 -xid=0,0,-1,3,5"
+
+
+# --- TPrime settings ---
+# Aligns spike times from each probe stream to a common reference clock.
+tprime:
+  sync_period: 1.0   # period (seconds) of the sync pulse used for alignment
+  # File name patterns for the sync edge files written by CatGT.
+  # {run} and {prb} are filled in automatically by the pipeline.
+  tostream_file: "{run}_tcat.nidq.xd_8_0_500.txt"
+  fromstream_file: "{run}_tcat.imec{prb}.ap.xd_384_6_500.txt"
+
+
+# --- Kilosort 4 parameters ---
+# All fields are optional -- omit a field to use the Kilosort 4 default.
+# Defaults shown in comments are for 30 kHz Neuropixels recordings.
+kilosort4_params:
+
+  # -- Spike detection thresholds --
+  # Lower values detect more spikes but increase false positives.
+  Th_universal: 9   # threshold for universal (data-independent) templates  [default: 9]
+  Th_learned: 8     # threshold for templates learned from the data           [default: 8]
+
+  # -- Drift correction --
+  # nblocks=0 disables; nblocks=1 rigid (uniform) registration;
+  # higher values apply non-rigid correction across probe depth.
+  # Use nblocks>1 for long recordings or large cortical spans.
+  nblocks: 1        # [default: 1]
+
+  # -- Common average reference --
+  # Recommended for Neuropixels. Set false if data are already re-referenced.
+  do_CAR: true      # [default: true]
+
+  # -- Waveform window --
+  # Number of time samples extracted around each spike (at 30 kHz, 61 = 2 ms).
+  nt: 61            # [default: 61]
+
+  # -- Template spatial extent --
+  # Minimum spatial footprint (um) of a template. Keep default for Neuropixels.
+  min_template_size: 10   # um  [default: 10]
+
+  # -- Artifact rejection --
+  # Rejects spikes exceeding this amplitude (whitened units). Leave commented
+  # out to disable (= inf). Useful if there are large movement artifacts.
+  # artifact_threshold: 500
+
+  # -- Duplicate spike removal --
+  duplicate_spike_ms: 0.25   # spikes on the same unit within this window are removed [default: 0.25]
+
+  # -- Autocorrelogram-based merging --
+  # Lower = more aggressive merging of units with clean ACGs.
+  acg_threshold: 0.2         # [default: 0.2]
+
+  # -- Batch size --
+  # Samples per batch (default = 2 s at 30 kHz).
+  # Increase for more stable drift estimation; decrease if memory is limited.
+  batch_size: 60000          # [default: 60000]
+
+
+# --- Processing settings ---
+n_jobs: 8                    # parallel workers for SpikeInterface postprocessing
+force_rerun_catgt: false     # set true to redo CatGT even if output already exists
+force_rerun_kilosort: false  # set true to redo sorting/postprocessing
+
+
+# --- Runs to process ---
+# Add one entry per recording session. The pipeline processes them in order.
+#
+# name     : SpikeGLX run name (the part before _gN, e.g. 240308_KK102)
+# gate     : gate index (integer)
+# triggers : trigger range passed to CatGT, e.g. "0,0" for a single trigger
+# probes   : list of probe indices to process
+#
+# Raw data is found automatically in either layout:
+#   New: {npx_directory}/{name}_g{gate}/          (recording folder directly under npx_directory)
+#   Old: {npx_directory}/{name}/{name}_g{gate}/   (wrapped in an experiment folder)
+runs:
+  - name: 240308_KK102
+    gate: 0
+    triggers: "0,0"
+    probes: [0]
