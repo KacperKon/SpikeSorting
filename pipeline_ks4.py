@@ -188,6 +188,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         print(f"  [Postprocessing] Recomputing metrics for probe {prb}...")
         si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
         analyzer = si.load_sorting_analyzer(ana_dir)
+        analyzer.set_temporary_recording(recording)
         analyzer.compute([
             'random_spikes',
             'waveforms',
