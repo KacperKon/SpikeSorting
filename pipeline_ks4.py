@@ -146,7 +146,7 @@ def load_or_run_kilosort4(run, prb, config):
     bin_path = catgt_bin_path(run, prb, config)
     recording = se.read_spikeglx(bin_path.parent, stream_id=f"imec{prb}.ap")
 
-    if not config.get('force_rerun_kilosort') and (output_dir / 'spikeinterface_info.json').exists():
+    if not config.get('force_rerun_kilosort') and (output_dir / 'spikeinterface_log.json').exists():
         print(f"  [KS4] Output exists for probe {prb}, loading.")
         return si.load_extractor(output_dir), recording
 

@@ -24,8 +24,8 @@
 # Windows example : Z:\haeslerlabwip2024\raw_data\ephys
 # Linux example   : /mnt/haesler/haeslerlabwip2024/raw_data/ephys
 #
-npx_directory: /home/euclient/haesler/haeslerlabwip2024/raw_data/ephys
-catgt_read:    /home/euclient/haesler/haeslerlabwip2024/preprocessed_data/ephys_sorted
+npx_directory: /mnt/haeslerlabwip2024/haeslerlabwip2024/raw_data/ephys
+catgt_read:    /mnt/haeslerlabwip2024/haeslerlabwip2024/preprocessed_data/ephys_sorted
 catgt_write:   /mnt/raidstorage/tmp_kilosort
 output_dir:    /mnt/raidstorage/sort
 
