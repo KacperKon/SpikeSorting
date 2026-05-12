@@ -173,15 +173,36 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
       - unit_locations                         : estimated unit depth along probe
       - principal_components                   : PCA projections
       - correlograms / isi_histograms          : refractory period checks
-      - quality_metrics                        : SNR, ISI violations, presence ratio, etc.
+      - template_metrics                       : waveform shape features (peak_trough_ratio, half_width, exp_decay, spread, etc.)
+      - quality_metrics                        : SNR, ISI violations, presence ratio, drift, etc.
 
     Skip condition: analyzer folder already exists and force_rerun_kilosort is false.
     """
     ana_dir = analyzer_dir(run, prb, config)
 
-    if not config.get('force_rerun_kilosort') and ana_dir.exists():
+    if not config.get('force_rerun_kilosort') and not config.get('force_rerun_metrics') and ana_dir.exists():
         print(f"  [Postprocessing] Analyzer exists for probe {prb}, loading.")
         return si.load_sorting_analyzer(ana_dir)
+
+    if config.get('force_rerun_metrics') and not config.get('force_rerun_kilosort') and ana_dir.exists():
+        print(f"  [Postprocessing] Recomputing metrics for probe {prb}...")
+        si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
+        analyzer = si.load_sorting_analyzer(ana_dir)
+        analyzer.compute([
+            'random_spikes',
+            'waveforms',
+            'noise_levels',
+            'templates',
+            'spike_amplitudes',
+            'spike_locations',
+            'unit_locations',
+            'principal_components',
+            'correlograms',
+            'isi_histograms',
+            'template_metrics',
+        ])
+        analyzer.compute('quality_metrics')
+        return analyzer
 
     print(f"  [Postprocessing] Computing waveforms and quality metrics for probe {prb}...")
     si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
@@ -204,6 +225,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         'principal_components',
         'correlograms',
         'isi_histograms',
+        'template_metrics',
     ])
     analyzer.compute('quality_metrics')
     return analyzer

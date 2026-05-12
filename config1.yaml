@@ -108,7 +108,8 @@ kilosort4_params:
 # --- Processing settings ---
 n_jobs: 8                    # parallel workers for SpikeInterface postprocessing
 force_rerun_catgt: false     # set true to redo CatGT even if output already exists
-force_rerun_kilosort: false  # set true to redo sorting/postprocessing
+force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
+force_rerun_metrics: true    # set true to recompute metrics without re-sorting
 
 
 # --- Runs to process ---
