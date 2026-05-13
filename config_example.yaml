@@ -24,15 +24,15 @@
 # Windows example : Z:\haeslerlabwip2024\raw_data\ephys
 # Linux example   : /mnt/haesler/haeslerlabwip2024/raw_data/ephys
 #
-npx_directory: /path/to/raw_data/ephys
-catgt_read:    /path/to/preprocessed_data/ephys_sorted
-catgt_write:   /path/to/tmp_kilosort
-output_dir:    /path/to/sort
+npx_directory: /mnt/haeslerlabwip2024/haeslerlabwip2024/raw_data/ephys
+catgt_read:    /mnt/haeslerlabwip2024/haeslerlabwip2024/preprocessed_data/ephys_sorted
+catgt_write:   /mnt/raidstorage/tmp_kilosort
+output_dir:    /mnt/raidstorage/sort
 
 
 # --- Tool binaries ---
-catgt_bin:  /path/to/CatGT-linux/runit.sh    # path to CatGT
-tprime_bin: /path/to/TPrime-linux/runit.sh   # path to TPrime
+catgt_bin: /home/euclient/kacper/CatGT-linux/runit.sh    # path to CatGT
+tprime_bin: /home/euclient/kacper/TPrime-linux/runit.sh  # path to TPrime
 
 
 # --- CatGT settings ---
