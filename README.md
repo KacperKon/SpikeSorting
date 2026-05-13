@@ -67,18 +67,23 @@ From the project root:
 bash bin/run_sorting.sh config1.yaml
 ```
 
-This starts the pipeline in a detached `screen` session so it keeps running after you disconnect from SSH.
+This starts the pipeline in a detached `screen` session named after the config file (e.g. `sorting_config1`), so it keeps running after you disconnect from SSH. Multiple configs can run in parallel — each gets its own session.
 
 **Monitor progress:**
 ```bash
-screen -r sorting          # attach to the live session (Ctrl+A then D to detach again)
+screen -r sorting_config1  # attach to the live session (Ctrl+A then D to detach again)
 tail -f kk_ks4_YYMMDD.log  # or follow the log file
 ```
 
 **Check running processes:**
 ```bash
-screen -ls                 # list screen sessions
+screen -ls                 # list all screen sessions
 ps aux | grep pipeline     # check if the process is alive
+```
+
+**Stop a session:**
+```bash
+screen -S sorting_config1 -X quit
 ```
 
 You can also run the pipeline directly (without screen) if you don't need background execution:

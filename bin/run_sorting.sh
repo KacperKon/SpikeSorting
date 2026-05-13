@@ -6,8 +6,9 @@
 #   config.yaml path is relative to where you run this script from (project root).
 
 CONFIG=${1:-config.yaml}
-SESSION="sorting"
-LOG="kk_ks4_$(date +%y%m%d).log"
+SESSION="sorting_$(basename $CONFIG .yaml)"
+mkdir -p logs
+LOG="logs/kk_ks4_$(date +%y%m%d).log"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 screen -dmS "$SESSION" bash -c \
