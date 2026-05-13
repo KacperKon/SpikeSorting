@@ -41,7 +41,7 @@ tprime_bin: /home/euclient/kacper/TPrime-linux/runit.sh  # path to TPrime
 # -apfilter / -lffilter    : Butterworth filter settings (type, order, low_hz, high_hz)
 #   Order 12 one-pass = equivalent to standard order-3 zero-phase (filtfilt) filter.
 # -gfix                    : remove DC offset artifacts (amp_threshold, slope, noise)
-catgt_cmd_string: "-prb_fld -out_prb_fld -apfilter=butter,12,300,10000 -lffilter=butter,12,1,500 -gfix=0.4,0.10,0.02"
+catgt_cmd_string: "-prb_fld -out_prb_fld -gblcar -apfilter=butter,12,300,10000 -lffilter=butter,12,1,500 -gfix=0.4,0.10,0.02"
 
 # NI (analog/digital) channel extraction -- edit to match your sync/TTL wiring.
 # -xa  : extract analog channel as continuous signal
@@ -108,7 +108,7 @@ kilosort4_params:
 
 # --- Processing settings ---
 n_jobs: 1                    # parallel workers for SpikeInterface postprocessing
-                             # n_jobs=1 is often fastest for network-mounted data
+                             # n_jobs=1 is often faster for network-mounted data
 force_rerun_catgt: false     # set true to redo CatGT even if output already exists
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
 force_rerun_metrics: false   # set true to recompute metrics without re-sorting
