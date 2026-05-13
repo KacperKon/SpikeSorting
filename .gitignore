@@ -4,3 +4,4 @@ logs/
 *.log
 config*.yaml
 !config_example.yaml
+.vscode/
