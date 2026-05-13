@@ -3,14 +3,6 @@ KS pipeline:
 1) Make sure that the script still runs after disconnecting remote connection 
 (that it doesn't kill the terminal)
 
-2) Add the 'force rerun' option to all the other pipeline elements 
-(TPrime, quality metrics)
-
-4) Save 'spike_times_sec' in the sorter folder, where the 'spike_times' are
-
-5) Install CatGT and TPrime on the Linux machine
-
-6) Add git ignore (logs and configs)
 
 Curation pipeline:
 5) Add Bobmbcell
@@ -27,4 +19,10 @@ Done:
 3) Double check if all important quality metrics from SpikeInterface are implemented
 0) Make git repo with remote to avoid copy-pasting between laptop and workstation.
 7) Optional - update SpikeInterface and Kilosort?
+2) Add the 'force rerun' option to all the other pipeline elements 
+(TPrime, quality metrics)
+4) Save 'spike_times_sec' in the sorter folder, where the 'spike_times' are
+5) Install CatGT and TPrime on the Linux machine
+10) Add waveform metrics: exp_decay, velocity_above, spread, velocity_below
+6) Add git ignore (logs and configs)
 

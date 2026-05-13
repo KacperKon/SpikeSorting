@@ -1,7 +1,7 @@
-﻿# =============================================================================
+# =============================================================================
 # Spike sorting pipeline configuration
 # =============================================================================
-# Run the pipeline with: python pipeline.py config.yaml
+# Run the pipeline with: python bin/pipeline_ks4.py config.yaml
 # Steps: CatGT -> Kilosort 4 -> SpikeInterface postprocessing -> TPrime
 # =============================================================================
 
@@ -24,21 +24,22 @@
 # Windows example : Z:\haeslerlabwip2024\raw_data\ephys
 # Linux example   : /mnt/haesler/haeslerlabwip2024/raw_data/ephys
 #
-npx_directory: /mnt/haeslerlabwip2024/haeslerlabwip2024/raw_data/ephys
-catgt_read:    /mnt/haeslerlabwip2024/haeslerlabwip2024/preprocessed_data/ephys_sorted
-catgt_write:   /mnt/raidstorage/tmp_kilosort
-output_dir:    /mnt/raidstorage/sort
+npx_directory: /path/to/raw_data/ephys
+catgt_read:    /path/to/preprocessed_data/ephys_sorted
+catgt_write:   /path/to/tmp_kilosort
+output_dir:    /path/to/sort
 
 
-# --- Tool binaries (Linux paths on the sorting workstation) ---
-catgt_bin: /home/euclient/kacper/CatGT-linux/runit.sh    # path to CatGT
-tprime_bin: /home/euclient/kacper/TPrime-linux/runit.sh  # path to TPrime
+# --- Tool binaries ---
+catgt_bin:  /path/to/CatGT-linux/runit.sh    # path to CatGT
+tprime_bin: /path/to/TPrime-linux/runit.sh   # path to TPrime
 
 
 # --- CatGT settings ---
 # Concatenates triggers, band-pass filters AP and LFP bands, and extracts sync events.
 # -prb_fld / -out_prb_fld : write one sub-folder per probe
 # -apfilter / -lffilter    : Butterworth filter settings (type, order, low_hz, high_hz)
+#   Order 12 one-pass = equivalent to standard order-3 zero-phase (filtfilt) filter.
 # -gfix                    : remove DC offset artifacts (amp_threshold, slope, noise)
 catgt_cmd_string: "-prb_fld -out_prb_fld -apfilter=butter,12,300,10000 -lffilter=butter,12,1,500 -gfix=0.4,0.10,0.02"
 
@@ -107,9 +108,11 @@ kilosort4_params:
 
 # --- Processing settings ---
 n_jobs: 1                    # parallel workers for SpikeInterface postprocessing
+                             # n_jobs=1 is often fastest for network-mounted data
 force_rerun_catgt: false     # set true to redo CatGT even if output already exists
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
-force_rerun_metrics: true    # set true to recompute metrics without re-sorting
+force_rerun_metrics: false   # set true to recompute metrics without re-sorting
+force_rerun_tprime: false    # set true to redo TPrime alignment
 
 
 # --- Runs to process ---

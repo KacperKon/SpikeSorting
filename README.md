@@ -1,0 +1,128 @@
+# Neuropixels Spike Sorting Pipeline
+
+Automated pipeline for sorting Neuropixels recordings acquired with SpikeGLX.
+
+**Steps:** CatGT → Kilosort 4 → SpikeInterface postprocessing → TPrime
+
+---
+
+## Prerequisites
+
+| Tool | Notes |
+|------|-------|
+| [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html) | package manager |
+| `si_ks4` micromamba environment | SpikeInterface + Kilosort 4 (see below) |
+| CatGT | standalone binary, Linux version from https://billkarsh.github.io/SpikeGLX |
+| TPrime | standalone binary, same site |
+| `screen` | usually pre-installed; `sudo apt install screen` if missing |
+
+### Setting up the `si_ks4` environment
+
+```bash
+micromamba create -n si_ks4 python=3.11
+micromamba activate si_ks4
+pip install spikeinterface[full,widgets]
+pip install kilosort
+```
+
+---
+
+## Setup
+
+1. **Clone the repo** on your sorting machine:
+   ```bash
+   git clone <repo-url>
+   cd SpikeSorting
+   ```
+
+2. **Copy the example config** and fill in your paths:
+   ```bash
+   cp config_example.yaml config1.yaml
+   nano config1.yaml   # or any editor
+   ```
+
+3. **Set the paths** in your config:
+   - `npx_directory` — raw SpikeGLX recordings (read-only is fine)
+   - `catgt_read` — existing preprocessed CatGT data to read from
+   - `catgt_write` — where new CatGT output is written (needs write access)
+   - `output_dir` — where Kilosort and SpikeInterface results go
+   - `catgt_bin` / `tprime_bin` — paths to the `runit.sh` scripts
+
+4. **Add your recordings** under the `runs:` section of the config:
+   ```yaml
+   runs:
+     - name: 240308_KK102   # SpikeGLX run name (before _gN)
+       gate: 0
+       triggers: "0,0"
+       probes: [0]
+   ```
+
+---
+
+## Running the pipeline
+
+From the project root:
+
+```bash
+bash bin/run_sorting.sh config1.yaml
+```
+
+This starts the pipeline in a detached `screen` session so it keeps running after you disconnect from SSH.
+
+**Monitor progress:**
+```bash
+screen -r sorting          # attach to the live session (Ctrl+A then D to detach again)
+tail -f kk_ks4_YYMMDD.log  # or follow the log file
+```
+
+**Check running processes:**
+```bash
+screen -ls                 # list screen sessions
+ps aux | grep pipeline     # check if the process is alive
+```
+
+You can also run the pipeline directly (without screen) if you don't need background execution:
+```bash
+micromamba run -n si_ks4 python bin/pipeline_ks4.py config1.yaml
+```
+
+---
+
+## Output structure
+
+```
+output_dir/
+  catgt_{run}_g{gate}/
+    {run}_g{gate}_imec{prb}/
+      imec{prb}_ks4/
+        sorter_output/
+          spike_times_sec.npy      # merged spike times in seconds
+          spike_times_sec_adj.npy  # TPrime-aligned spike times
+        analyzer/                  # SpikeInterface SortingAnalyzer
+          extensions/
+            quality_metrics/       # SNR, ISI violations, presence ratio, etc.
+            template_metrics/      # waveform shape features (exp_decay, spread, etc.)
+            ...
+```
+
+---
+
+## Re-running specific steps
+
+Set the relevant flag to `true` in your config and rerun:
+
+| Flag | Effect |
+|------|--------|
+| `force_rerun_catgt: true` | Redo CatGT filtering even if output exists |
+| `force_rerun_kilosort: true` | Redo sorting + all postprocessing from scratch |
+| `force_rerun_metrics: true` | Recompute waveforms and metrics only (skip re-sorting) |
+| `force_rerun_tprime: true` | Redo TPrime spike time alignment |
+
+---
+
+## Tips
+
+- **n_jobs**: Keep `n_jobs: 1` if data is on a network drive — parallel workers cause I/O contention and are slower than a single worker.
+- **CatGT output**: CatGT logs to `CatGT.log` in the working directory, not to stdout. Check this file if CatGT appears to do nothing.
+- **Multiple recordings**: Add multiple entries under `runs:` — the pipeline processes them in order.
+- **Read-only catgt data**: If preprocessed CatGT data already exists on a read-only server, point `catgt_read` there. The pipeline will skip CatGT and read from it directly.

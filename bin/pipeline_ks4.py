@@ -170,10 +170,11 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
       - random_spikes / waveforms / templates : spike shapes
       - noise_levels                           : per-channel noise estimate
       - spike_amplitudes                       : per-spike amplitude
-      - unit_locations                         : estimated unit depth along probe
+      - spike_locations / unit_locations       : estimated spike/unit depth along probe
       - principal_components                   : PCA projections
       - correlograms / isi_histograms          : refractory period checks
-      - template_metrics                       : waveform shape features (peak_trough_ratio, half_width, exp_decay, spread, etc.)
+      - template_metrics                       : waveform shape features (peak_trough_ratio,
+                                                 half_width, exp_decay, spread, etc.)
       - quality_metrics                        : SNR, ISI violations, presence ratio, drift, etc.
 
     Skip condition: analyzer folder already exists and force_rerun_kilosort is false.
@@ -200,7 +201,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
             'principal_components',
             'correlograms',
             'isi_histograms',
-            'template_metrics',
+            {'template_metrics': {'include_multi_channel_metrics': True}},
         ])
         analyzer.compute('quality_metrics')
         return analyzer
@@ -226,7 +227,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         'principal_components',
         'correlograms',
         'isi_histograms',
-        'template_metrics',
+        {'template_metrics': {'include_multi_channel_metrics': True}},
     ])
     analyzer.compute('quality_metrics')
     return analyzer
@@ -239,8 +240,8 @@ def export_spike_times_for_tprime(sorting, recording, run, prb, config):
     Spikes from all units are merged and sorted chronologically, which is the
     format expected by TPrime's -events flag.
     """
-    out_path = ks4_dir(run, prb, config) / 'spike_times_sec.npy'
-    if out_path.exists() and not config.get('force_rerun_kilosort'):
+    out_path = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec.npy'
+    if out_path.exists() and not config.get('force_rerun_kilosort') and not config.get('force_rerun_tprime'):
         return
 
     fs = recording.get_sampling_frequency()
@@ -265,8 +266,12 @@ def run_tprime(run, config):
 
     for prb in run['probes']:
         fromstream = catgt_prb_dir(run, prb, config) / tprime_cfg['fromstream_file'].format(run=run_str, prb=prb)
-        spike_in  = ks4_dir(run, prb, config) / 'spike_times_sec.npy'
-        spike_out = ks4_dir(run, prb, config) / 'spike_times_sec_adj.npy'
+        spike_in  = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec.npy'
+        spike_out = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec_adj.npy'
+
+        if spike_out.exists() and not config.get('force_rerun_tprime'):
+            print(f"  [TPrime] Output exists for probe {prb}, skipping.")
+            continue
 
         cmd = [
             config['tprime_bin'],

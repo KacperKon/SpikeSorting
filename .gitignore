@@ -1,4 +1,6 @@
 CatGT-linux/
 TPrime-linux/
 logs/
-CatGT.log
+*.log
+config*.yaml
+!config_example.yaml
