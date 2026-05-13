@@ -78,7 +78,7 @@ kilosort4_params:
 
   # -- Common average reference --
   # Recommended for Neuropixels. Set false if data are already re-referenced.
-  do_CAR: true      # [default: true]
+  do_CAR: false      # [default: true]
 
   # -- Waveform window --
   # Number of time samples extracted around each spike (at 30 kHz, 61 = 2 ms).
