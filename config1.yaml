@@ -31,8 +31,8 @@ output_dir:    /mnt/raidstorage/sort
 
 
 # --- Tool binaries (Linux paths on the sorting workstation) ---
-catgt_bin: /path/to/CatGT    # update: run `which CatGT` to find the path
-tprime_bin: /path/to/TPrime  # update: run `which TPrime` to find the path
+catgt_bin: /home/euclient/kacper/CatGT-linux/runit.sh    # path to CatGT
+tprime_bin: /home/euclient/kacper/TPrime-linux/runit.sh  # path to TPrime
 
 
 # --- CatGT settings ---
@@ -106,7 +106,7 @@ kilosort4_params:
 
 
 # --- Processing settings ---
-n_jobs: 8                    # parallel workers for SpikeInterface postprocessing
+n_jobs: 1                    # parallel workers for SpikeInterface postprocessing
 force_rerun_catgt: false     # set true to redo CatGT even if output already exists
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
 force_rerun_metrics: true    # set true to recompute metrics without re-sorting
