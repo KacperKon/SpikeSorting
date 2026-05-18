@@ -2,7 +2,7 @@
 
 Automated pipeline for sorting Neuropixels recordings acquired with SpikeGLX.
 
-**Steps:** CatGT → Kilosort 4 → SpikeInterface postprocessing → TPrime
+**Steps:** CatGT → Kilosort 4 → SpikeInterface postprocessing → TPrime → UnitRefine curation
 
 ---
 
@@ -12,6 +12,7 @@ Automated pipeline for sorting Neuropixels recordings acquired with SpikeGLX.
 |------|-------|
 | [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html) | package manager |
 | `si_ks4` micromamba environment | SpikeInterface + Kilosort 4 (see below) |
+| `curation` micromamba environment | SpikeInterface + UnitRefine dependencies (see below) |
 | CatGT | standalone binary, Linux version from https://billkarsh.github.io/SpikeGLX |
 | TPrime | standalone binary, same site |
 | `screen` | usually pre-installed; `sudo apt install screen` if missing |
@@ -23,6 +24,26 @@ micromamba create -n si_ks4 python=3.11
 micromamba activate si_ks4
 pip install spikeinterface[full,widgets]
 pip install kilosort
+```
+
+### Setting up the `curation` environment
+
+```bash
+micromamba create -n curation python=3.11
+micromamba activate curation
+pip install uv
+
+# UnitRefine — must be cloned (not on PyPI)
+git clone https://github.com/anoushkajain/UnitRefine.git
+uv pip install ./UnitRefine
+
+# Bombcell (Python)
+uv pip install bombcell
+```
+
+To launch the UnitRefine GUI for manual inspection:
+```bash
+uv run --directory UnitRefine unitrefine --project_folder my_project
 ```
 
 ---
@@ -93,6 +114,29 @@ micromamba run -n si_ks4 python bin/pipeline_ks4.py config1.yaml
 
 ---
 
+## Running curation (UnitRefine)
+
+Run this **after** sorting has completed. It classifies each unit as neural or noise using a pretrained model from HuggingFace.
+
+```bash
+bash bin/run_curation.sh config1.yaml
+```
+
+This starts in its own `screen` session (e.g. `curation_config1`).
+
+**Monitor progress:**
+```bash
+screen -r curation_config1
+tail -f logs/kk_curation_YYMMDD.log
+```
+
+Or run directly:
+```bash
+micromamba run -n curation python bin/pipeline_curation.py config1.yaml
+```
+
+---
+
 ## Output structure
 
 ```
@@ -108,6 +152,8 @@ output_dir/
             quality_metrics/       # SNR, ISI violations, presence ratio, etc.
             template_metrics/      # waveform shape features (exp_decay, spread, etc.)
             ...
+        curation/
+          unitrefine_labels.csv    # unit IDs, predicted label, confidence score
 ```
 
 ---
@@ -122,6 +168,7 @@ Set the relevant flag to `true` in your config and rerun:
 | `force_rerun_kilosort: true` | Redo sorting + all postprocessing from scratch |
 | `force_rerun_metrics: true` | Recompute waveforms and metrics only (skip re-sorting) |
 | `force_rerun_tprime: true` | Redo TPrime spike time alignment |
+| `force_rerun_curation: true` | Redo UnitRefine classification even if labels exist |
 
 ---
 

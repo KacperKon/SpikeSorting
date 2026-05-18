@@ -1,8 +1,5 @@
 
 KS pipeline:
-1) Make sure that the script still runs after disconnecting remote connection 
-(that it doesn't kill the terminal)
-
 
 Curation pipeline:
 5) Add Bobmbcell
@@ -16,6 +13,8 @@ Data processing / general
 
 
 Done:
+1) Make sure that the script still runs after disconnecting remote connection 
+(that it doesn't kill the terminal)
 3) Double check if all important quality metrics from SpikeInterface are implemented
 0) Make git repo with remote to avoid copy-pasting between laptop and workstation.
 7) Optional - update SpikeInterface and Kilosort?
