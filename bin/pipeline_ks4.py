@@ -200,9 +200,9 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
             'unit_locations',
             'principal_components',
             'correlograms',
-            'isi_histograms',
-            {'template_metrics': {'include_multi_channel_metrics': True}},
+            'isi_histograms'
         ])
+        analyzer.compute('template_metrics', include_multi_channel_metrics=True)
         analyzer.compute('quality_metrics')
         return analyzer
 
