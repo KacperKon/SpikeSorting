@@ -120,9 +120,21 @@ def run_bombcell(run, prb, config):
         param[k] = v
 
     save_dir.mkdir(parents=True, exist_ok=True)
-    quality_metrics, param, unit_type, unit_type_string = bc.run_bombcell(
-        str(ks_dir), str(save_dir), param
-    )
+
+    # Bombcell opens the raw .bin via np.memmap in 'r+' (read-write) mode, which
+    # fails on read-only network mounts. We temporarily patch np.memmap to force
+    # read-only mode for the duration of the Bombcell call, then restore it.
+    import numpy as np
+    _orig_memmap = np.memmap
+    def _readonly_memmap(filename, dtype='uint8', mode='r+', **kwargs):
+        return _orig_memmap(filename, dtype=dtype, mode='r', **kwargs)
+    np.memmap = _readonly_memmap
+    try:
+        quality_metrics, param, unit_type, unit_type_string = bc.run_bombcell(
+            str(ks_dir), str(save_dir), param
+        )
+    finally:
+        np.memmap = _orig_memmap
 
     labels_df = pd.DataFrame({
         'unit_id': range(len(unit_type_string)),
