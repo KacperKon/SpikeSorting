@@ -116,7 +116,7 @@ def run_bombcell(run, prb, config):
         kilosort_version=4,
         meta_file=str(meta_path),
     )
-    for k, v in config.get('bombcell', {}).items():
+    for k, v in (config.get('bombcell') or {}).items():
         param[k] = v
 
     save_dir.mkdir(parents=True, exist_ok=True)
