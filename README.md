@@ -155,14 +155,13 @@ output_dir/
           spike_times_sec.npy      # merged spike times in seconds
           spike_times_sec_adj.npy  # TPrime-aligned spike times
         analyzer/                  # SpikeInterface SortingAnalyzer
+          labels.csv               # UnitRefine labels (Good/Noise); auto-detected by UnitRefine GUI
           extensions/
             quality_metrics/       # SNR, ISI violations, presence ratio, etc.
             template_metrics/      # waveform shape features (exp_decay, spread, etc.)
             ...
-        curation/
-          unitrefine_labels.csv    # unit IDs, predicted label, confidence score
-          bombcell_labels.csv      # unit IDs, Bombcell unit type (good/MUA/noise/non-somatic)
-          bombcell/                # full Bombcell output (quality metrics, GUI data)
+        bombcell/                  # Bombcell output (quality metrics, GUI data)
+          unit_labels.csv          # unit IDs, Bombcell unit type (good/MUA/noise/non-somatic)
 ```
 
 ---

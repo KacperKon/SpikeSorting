@@ -12,14 +12,16 @@ Usage:
   python bin/pipeline_curation.py config.yaml
 
 Output (per probe, inside the existing ks4 folder):
-  curation/
-    unitrefine_labels.csv   -- unit IDs, predicted label, confidence score
-    bombcell_labels.csv     -- unit IDs, Bombcell unit type
-    bombcell/               -- full Bombcell output (quality metrics, GUI data)
+  analyzer/
+    labels.csv        -- unit IDs + quality label (Good/Noise); loaded by UnitRefine GUI
+  bombcell/
+    unit_labels.csv   -- unit IDs + Bombcell unit type
+    ...               -- full Bombcell output (quality metrics, GUI data)
 """
 
 import sys
 import yaml
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -33,6 +35,10 @@ def load_config(path):
         return yaml.safe_load(f)
 
 
+def _ts():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
 # --- Path helpers (mirror pipeline_ks4.py) ---
 
 def ks4_dir(run, prb, config):
@@ -42,10 +48,6 @@ def ks4_dir(run, prb, config):
 
 def analyzer_dir(run, prb, config):
     return ks4_dir(run, prb, config) / "analyzer"
-
-
-def curation_dir(run, prb, config):
-    return ks4_dir(run, prb, config) / "curation"
 
 
 def _catgt_root(run, config):
@@ -68,7 +70,7 @@ def catgt_bin_path(run, prb, config):
 
 def run_unitrefine(run, prb, config):
     ana_dir = analyzer_dir(run, prb, config)
-    out_path = curation_dir(run, prb, config) / "unitrefine_labels.csv"
+    out_path = ana_dir / "labels.csv"
 
     if not ana_dir.exists():
         print(f"  [UnitRefine] No analyzer found for probe {prb}, skipping.")
@@ -78,7 +80,7 @@ def run_unitrefine(run, prb, config):
         print(f"  [UnitRefine] Labels exist for probe {prb}, skipping.")
         return
 
-    print(f"  [UnitRefine] Running for probe {prb}...")
+    print(f"  [{_ts()}] [UnitRefine] Running for probe {prb}...")
     analyzer = si.load_sorting_analyzer(ana_dir)
 
     labels = sc.model_based_label_units(
@@ -87,21 +89,25 @@ def run_unitrefine(run, prb, config):
         trusted=['numpy.dtype'],
     )
 
-    curation_dir(run, prb, config).mkdir(parents=True, exist_ok=True)
-    labels.to_csv(out_path)
-    print(f"  [UnitRefine] Labels saved: {out_path}")
+    # Save in the format expected by the UnitRefine GUI (quality: Good/Noise)
+    gui_labels = pd.DataFrame({
+        'unit_id': labels.index,
+        'quality': labels['prediction'].map({'neural': 'Good', 'noise': 'Noise'}),
+    })
+    gui_labels.to_csv(out_path, index=False)
+    print(f"  [{_ts()}] [UnitRefine] Labels saved: {out_path}")
 
-    counts = labels.iloc[:, 0].value_counts()
+    counts = gui_labels['quality'].value_counts()
     for label, count in counts.items():
-        print(f"    {label}: {count} units ({count / len(labels) * 100:.1f}%)")
+        print(f"    {label}: {count} units ({count / len(gui_labels) * 100:.1f}%)")
 
 
 def run_bombcell(run, prb, config):
     ks_dir = ks4_dir(run, prb, config) / 'sorter_output'
     bin_path = catgt_bin_path(run, prb, config)
     meta_path = bin_path.with_suffix('.meta')
-    save_dir = curation_dir(run, prb, config) / 'bombcell'
-    out_path = curation_dir(run, prb, config) / 'bombcell_labels.csv'
+    save_dir = ks4_dir(run, prb, config) / 'bombcell'
+    out_path = save_dir / 'unit_labels.csv'
 
     if not ks_dir.exists():
         print(f"  [Bombcell] No KS4 output found for probe {prb}, skipping.")
@@ -111,7 +117,7 @@ def run_bombcell(run, prb, config):
         print(f"  [Bombcell] Labels exist for probe {prb}, skipping.")
         return
 
-    print(f"  [Bombcell] Running for probe {prb}...")
+    print(f"  [{_ts()}] [Bombcell] Running for probe {prb}...")
 
     param = bc.get_default_parameters(
         kilosort_path=str(ks_dir),
@@ -160,7 +166,7 @@ def run_bombcell(run, prb, config):
         'label': unit_type_string,
     })
     labels_df.to_csv(out_path, index=False)
-    print(f"  [Bombcell] Labels saved: {out_path}")
+    print(f"  [{_ts()}] [Bombcell] Labels saved: {out_path}")
 
     counts = labels_df['label'].value_counts()
     for label, count in counts.items():
@@ -168,7 +174,7 @@ def run_bombcell(run, prb, config):
 
 
 def process_run(run, config):
-    print(f"\n{'='*60}\nCuration: {run['name']}\n{'='*60}")
+    print(f"\n{'='*60}\n[{_ts()}] Curation: {run['name']}\n{'='*60}")
     for prb in run['probes']:
         run_unitrefine(run, prb, config)
         run_bombcell(run, prb, config)

@@ -31,8 +31,8 @@ output_dir:    /mnt/raidstorage/sort
 
 
 # --- Tool binaries ---
-catgt_bin: /home/euclient/kacper/CatGT-linux/runit.sh    # path to CatGT
-tprime_bin: /home/euclient/kacper/TPrime-linux/runit.sh  # path to TPrime
+catgt_bin: /home/euclient/kacper/SpikeSorting/CatGT-linux/runit.sh    # path to CatGT
+tprime_bin: /home/euclient/kacper/SpikeSorting/TPrime-linux/runit.sh  # path to TPrime
 
 
 # --- CatGT settings ---

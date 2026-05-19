@@ -21,6 +21,7 @@ import sys
 import shutil
 import subprocess
 import numpy as np
+from datetime import datetime
 import yaml
 from pathlib import Path
 
@@ -32,6 +33,10 @@ import spikeinterface.sorters as ss
 def load_config(path):
     with open(path) as f:
         return yaml.safe_load(f)
+
+
+def _ts():
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
 # --- Path helpers ---
@@ -134,7 +139,7 @@ def run_catgt(run, config):
             *config['ni_extract_string'].split(),
             f"-dest={config['catgt_write']}",
         ]
-        print(f"  [CatGT] Running: {' '.join(str(c) for c in cmd)}")
+        print(f"  [{_ts()}] [CatGT] Running: {' '.join(str(c) for c in cmd)}")
         subprocess.check_call([str(c) for c in cmd])
 
 
@@ -155,7 +160,7 @@ def load_or_run_kilosort4(run, prb, config):
         print(f"  [KS4] Output exists for probe {prb}, loading.")
         return si.load(output_dir), recording
 
-    print(f"  [KS4] Running Kilosort 4 for probe {prb}...")
+    print(f"  [{_ts()}] [KS4] Running Kilosort 4 for probe {prb}...")
     sorting = ss.run_sorter(
         sorter_name='kilosort4',
         recording=recording,
@@ -191,7 +196,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         return si.load_sorting_analyzer(ana_dir)
 
     if config.get('force_rerun_metrics') and not config.get('force_rerun_kilosort') and ana_dir.exists():
-        print(f"  [Postprocessing] Recomputing metrics for probe {prb}...")
+        print(f"  [{_ts()}] [Postprocessing] Recomputing metrics for probe {prb}...")
         si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
         analyzer = si.load_sorting_analyzer(ana_dir)
         analyzer.set_temporary_recording(recording)
@@ -211,7 +216,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         analyzer.compute('quality_metrics', qm_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
         return analyzer
 
-    print(f"  [Postprocessing] Computing waveforms and quality metrics for probe {prb}...")
+    print(f"  [{_ts()}] [Postprocessing] Computing waveforms and quality metrics for probe {prb}...")
     si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
 
     analyzer = si.create_sorting_analyzer(
@@ -285,7 +290,7 @@ def run_tprime(run, config):
             f"-fromstream=0,{fromstream}",
             f"-events=0,{spike_in},{spike_out}",
         ]
-        print(f"  [TPrime] Running: {' '.join(str(c) for c in cmd)}")
+        print(f"  [{_ts()}] [TPrime] Running: {' '.join(str(c) for c in cmd)}")
         subprocess.check_call([str(c) for c in cmd])
 
 
@@ -330,7 +335,7 @@ def clear_local_bin(run, prb, config):
 
 
 def process_run(run, config):
-    print(f"\n{'='*60}\nProcessing: {run['name']}\n{'='*60}")
+    print(f"\n{'='*60}\n[{_ts()}] Processing: {run['name']}\n{'='*60}")
     if config.get('copy_raw_to_local'):
         for prb in run['probes']:
             copy_bin_to_local(run, prb, config)
