@@ -60,7 +60,7 @@ def run_unitrefine(run, prb, config):
     print(f"  [UnitRefine] Running for probe {prb}...")
     analyzer = si.load_sorting_analyzer(ana_dir)
 
-    labels = sc.auto_label_units(
+    labels = sc.model_based_label_units(
         sorting_analyzer=analyzer,
         repo_id=config['curation']['unitrefine_model'],
         trusted=['numpy.dtype'],

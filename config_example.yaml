@@ -116,6 +116,13 @@ force_rerun_tprime: false    # set true to redo TPrime alignment
 force_rerun_curation: false  # set true to redo curation even if labels already exist
 
 
+# --- Quality metrics settings ---
+quality_metrics:
+  drift:
+    interval_s: 60                 # bin size in seconds for drift computation
+    min_spikes_per_interval: 30    # minimum spikes per bin (0.5 Hz × 60 s = 30)
+
+
 # --- Curation settings ---
 # Used by pipeline_curation.py. Run this after pipeline_ks4.py.
 curation:
