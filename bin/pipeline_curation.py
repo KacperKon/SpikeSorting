@@ -50,6 +50,9 @@ def curation_dir(run, prb, config):
 
 def _catgt_root(run, config):
     run_str = f"{run['name']}_g{run['gate']}"
+    if config.get('copy_raw_to_local') and config.get('catgt_local'):
+        if (Path(config['catgt_local']) / f"catgt_{run_str}").exists():
+            return Path(config['catgt_local'])
     if (Path(config['catgt_read']) / f"catgt_{run_str}").exists():
         return Path(config['catgt_read'])
     return Path(config['catgt_write'])
@@ -158,6 +161,8 @@ def process_run(run, config):
 def main():
     config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
     config = load_config(config_path)
+    if config.get('copy_raw_to_local') and not config.get('catgt_local'):
+        raise ValueError("copy_raw_to_local is true but catgt_local is not set in config.")
     for run in config['runs']:
         process_run(run, config)
 

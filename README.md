@@ -82,13 +82,20 @@ uv run --directory UnitRefine unitrefine --project_folder my_project
 
 ## Running the pipeline
 
-From the project root:
+To run sorting and curation in one go:
 
 ```bash
-bash bin/run_sorting.sh config1.yaml
+bash bin/run_pipeline.sh config1.yaml
 ```
 
-This starts the pipeline in a detached `screen` session named after the config file (e.g. `sorting_config1`), so it keeps running after you disconnect from SSH. Multiple configs can run in parallel — each gets its own session.
+Or run the steps individually:
+
+```bash
+bash bin/run_sorting.sh config1.yaml    # sorting only
+bash bin/run_curation.sh config1.yaml   # curation only (requires sorting to exist)
+```
+
+All scripts start a detached `screen` session named after the config file, so they keep running after you disconnect from SSH. Multiple configs can run in parallel — each gets its own session.
 
 **Monitor progress:**
 ```bash

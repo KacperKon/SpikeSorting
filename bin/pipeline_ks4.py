@@ -18,6 +18,7 @@ Directory roots (configured in config.yaml):
 """
 
 import sys
+import shutil
 import subprocess
 import numpy as np
 import yaml
@@ -63,10 +64,14 @@ def raw_recording_parent(run, config):
 def _catgt_root(run, config):
     """
     Resolves which catgt directory holds the preprocessed data for a run.
-    Checks catgt_read first; falls back to catgt_write if not found there.
+    If copy_raw_to_local is enabled and the local copy exists, prefer it.
+    Otherwise checks catgt_read first; falls back to catgt_write.
     CatGT always writes to catgt_write.
     """
     run_str = f"{run['name']}_g{run['gate']}"
+    if config.get('copy_raw_to_local') and config.get('catgt_local'):
+        if (Path(config['catgt_local']) / f"catgt_{run_str}").exists():
+            return Path(config['catgt_local'])
     if (Path(config['catgt_read']) / f"catgt_{run_str}").exists():
         return Path(config['catgt_read'])
     return Path(config['catgt_write'])
@@ -148,7 +153,7 @@ def load_or_run_kilosort4(run, prb, config):
 
     if not config.get('force_rerun_kilosort') and (output_dir / 'spikeinterface_log.json').exists():
         print(f"  [KS4] Output exists for probe {prb}, loading.")
-        return si.load_extractor(output_dir), recording
+        return si.load(output_dir), recording
 
     print(f"  [KS4] Running Kilosort 4 for probe {prb}...")
     sorting = ss.run_sorter(
@@ -284,19 +289,67 @@ def run_tprime(run, config):
         subprocess.check_call([str(c) for c in cmd])
 
 
+def copy_bin_to_local(run, prb, config):
+    run_str = f"{run['name']}_g{run['gate']}"
+    src_root = None
+    for candidate in [config['catgt_read'], config['catgt_write']]:
+        if (Path(candidate) / f"catgt_{run_str}").exists():
+            src_root = Path(candidate)
+            break
+    if src_root is None:
+        print(f"  [LocalCopy] Source not found for probe {prb}, skipping.")
+        return
+
+    prb_subdir = f"catgt_{run_str}/{run_str}_imec{prb}"
+    src_dir = src_root / prb_subdir
+    dst_dir = Path(config['catgt_local']) / prb_subdir
+    dst_dir.mkdir(parents=True, exist_ok=True)
+
+    for suffix in ['.ap.bin', '.ap.meta']:
+        src = src_dir / f"{run_str}_tcat.imec{prb}{suffix}"
+        dst = dst_dir / src.name
+        if dst.exists():
+            print(f"  [LocalCopy] Already local: {dst.name}, skipping.")
+            continue
+        if not src.exists():
+            print(f"  [LocalCopy] Source not found: {src.name}, skipping.")
+            continue
+        print(f"  [LocalCopy] Copying {src.name} to {dst_dir}...")
+        shutil.copy2(src, dst)
+        print(f"  [LocalCopy] Done.")
+
+
+def clear_local_bin(run, prb, config):
+    run_str = f"{run['name']}_g{run['gate']}"
+    prb_dir = Path(config['catgt_local']) / f"catgt_{run_str}" / f"{run_str}_imec{prb}"
+    for suffix in ['.ap.bin', '.ap.meta']:
+        f = prb_dir / f"{run_str}_tcat.imec{prb}{suffix}"
+        if f.exists():
+            f.unlink()
+            print(f"  [LocalCopy] Deleted {f.name}")
+
+
 def process_run(run, config):
     print(f"\n{'='*60}\nProcessing: {run['name']}\n{'='*60}")
+    if config.get('copy_raw_to_local'):
+        for prb in run['probes']:
+            copy_bin_to_local(run, prb, config)
     run_catgt(run, config)
     for prb in run['probes']:
         sorting, recording = load_or_run_kilosort4(run, prb, config)
         load_or_run_postprocessing(sorting, recording, run, prb, config)
         export_spike_times_for_tprime(sorting, recording, run, prb, config)
     run_tprime(run, config)
+    if config.get('copy_raw_to_local') and config.get('clear_local_copy'):
+        for prb in run['probes']:
+            clear_local_bin(run, prb, config)
 
 
 def main():
     config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
     config = load_config(config_path)
+    if config.get('copy_raw_to_local') and not config.get('catgt_local'):
+        raise ValueError("copy_raw_to_local is true but catgt_local is not set in config.")
     for run in config['runs']:
         process_run(run, config)
 
