@@ -125,19 +125,35 @@ def run_bombcell(run, prb, config):
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Bombcell opens the raw .bin via np.memmap in 'r+' (read-write) mode, which
-    # fails on read-only network mounts. We temporarily patch np.memmap to force
-    # read-only mode for the duration of the Bombcell call, then restore it.
+    # fails on read-only network mounts. We temporarily patch np.memmap with a
+    # subclass that forces read-only mode. A subclass (not a plain function) is
+    # required so that joblib workers pass isinstance/type checks correctly.
     import numpy as np
     _orig_memmap = np.memmap
-    def _readonly_memmap(filename, dtype='uint8', mode='r+', **kwargs):
-        return _orig_memmap(filename, dtype=dtype, mode='r', **kwargs)
-    np.memmap = _readonly_memmap
+
+    class _ReadOnlyMemmap(np.memmap):
+        def __new__(cls, filename, dtype='uint8', mode='r+', **kwargs):
+            return super().__new__(cls, filename, dtype=dtype, mode='r', **kwargs)
+
+    np.memmap = _ReadOnlyMemmap
+
+    import joblib
+    _orig_parallel = joblib.Parallel
+    n_jobs_bombcell = (config.get('bombcell') or {}).get('n_jobs')
+    if n_jobs_bombcell is not None:
+        class _NJobsParallel(joblib.Parallel):
+            def __init__(self, *args, **kwargs):
+                kwargs['n_jobs'] = n_jobs_bombcell
+                super().__init__(*args, **kwargs)
+        joblib.Parallel = _NJobsParallel
+
     try:
         quality_metrics, param, unit_type, unit_type_string = bc.run_bombcell(
             str(ks_dir), str(save_dir), param
         )
     finally:
         np.memmap = _orig_memmap
+        joblib.Parallel = _orig_parallel
 
     labels_df = pd.DataFrame({
         'unit_id': range(len(unit_type_string)),

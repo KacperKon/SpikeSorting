@@ -146,6 +146,10 @@ curation:
 # Any key set here overwrites the corresponding Bombcell default parameter.
 # Leave empty (or omit the section) to use Bombcell defaults.
 bombcell:
+  # n_jobs: number of parallel workers for waveform extraction.
+  # Omit (or set to -1) to use all cores -- recommended when .bin is on local storage.
+  # Set to 1 if .bin is on a network mount to avoid memory/IO contention.
+  # n_jobs: 1
   # Examples -- uncomment and adjust as needed:
   # maxRPViolations: 0.1
   # minAmplitude: 40
