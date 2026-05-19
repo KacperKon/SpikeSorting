@@ -113,7 +113,7 @@ force_rerun_catgt: false     # set true to redo CatGT even if output already exi
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
 force_rerun_metrics: false   # set true to recompute metrics without re-sorting
 force_rerun_tprime: false    # set true to redo TPrime alignment
-force_rerun_curation: false  # set true to redo curation even if labels already exist
+force_rerun_curation: true  # set true to redo curation even if labels already exist
 
 
 # --- Quality metrics settings ---
@@ -129,6 +129,17 @@ curation:
   # HuggingFace repo_id of the pretrained UnitRefine model.
   # If already downloaded via GUI, the cached version will be used automatically.
   unitrefine_model: "AnoushkaJain3/UnitRefine-mice-sua-classifier"
+
+
+# --- Bombcell settings ---
+# Optional overrides for Bombcell quality metric thresholds.
+# Any key set here overwrites the corresponding Bombcell default parameter.
+# Leave empty (or omit the section) to use Bombcell defaults.
+bombcell:
+  # Examples -- uncomment and adjust as needed:
+  # maxRPViolations: 0.1
+  # minAmplitude: 40
+  # minSNR: 0.5
 
 
 # --- Runs to process ---

@@ -154,6 +154,8 @@ output_dir/
             ...
         curation/
           unitrefine_labels.csv    # unit IDs, predicted label, confidence score
+          bombcell_labels.csv      # unit IDs, Bombcell unit type (good/MUA/noise/non-somatic)
+          bombcell/                # full Bombcell output (quality metrics, GUI data)
 ```
 
 ---
