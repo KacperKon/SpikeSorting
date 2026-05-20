@@ -12,7 +12,7 @@ LOG="logs/kk_ks4_$(date +%y%m%d).log"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 screen -dmS "$SESSION" bash -c \
-    "TQDM_DISABLE=1 micromamba run -n si_ks4 python \"$SCRIPT_DIR/pipeline_ks4.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\""
+    "TQDM_DISABLE=1 PYTHONUNBUFFERED=1 micromamba run -n si_ks4 python \"$SCRIPT_DIR/pipeline_ks4.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\""
 
 echo "Pipeline started in screen session '$SESSION'."
 echo "  Monitor live : screen -r $SESSION"
