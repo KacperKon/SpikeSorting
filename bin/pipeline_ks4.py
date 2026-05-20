@@ -82,6 +82,15 @@ def _catgt_root(run, config):
     return Path(config['catgt_write'])
 
 
+def _catgt_sync_root(run, config):
+    # Like _catgt_root but never returns catgt_local — sync .txt files are not
+    # copied there, only the .bin and .meta files are.
+    run_str = f"{run['name']}_g{run['gate']}"
+    if (Path(config['catgt_read']) / f"catgt_{run_str}").exists():
+        return Path(config['catgt_read'])
+    return Path(config['catgt_write'])
+
+
 def catgt_run_dir(run, config):
     run_str = f"{run['name']}_g{run['gate']}"
     return _catgt_root(run, config) / f"catgt_{run_str}"
@@ -195,13 +204,16 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         print(f"  [Postprocessing] Analyzer exists for probe {prb}, loading.")
         return si.load_sorting_analyzer(ana_dir)
 
+    chunk_duration = config.get('chunk_duration', '1s')
+    max_spikes_per_unit = config.get('max_spikes_per_unit', 500)
+
     if config.get('force_rerun_metrics') and not config.get('force_rerun_kilosort') and ana_dir.exists():
         print(f"  [{_ts()}] [Postprocessing] Recomputing metrics for probe {prb}...")
-        si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
+        si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
         analyzer = si.load_sorting_analyzer(ana_dir)
         analyzer.set_temporary_recording(recording)
+        analyzer.compute('random_spikes', max_spikes_per_unit=max_spikes_per_unit)
         analyzer.compute([
-            'random_spikes',
             'waveforms',
             'noise_levels',
             'templates',
@@ -217,7 +229,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         return analyzer
 
     print(f"  [{_ts()}] [Postprocessing] Computing waveforms and quality metrics for probe {prb}...")
-    si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration='1s')
+    si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
 
     analyzer = si.create_sorting_analyzer(
         sorting=sorting,
@@ -226,8 +238,8 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         folder=ana_dir,
         overwrite=True,
     )
+    analyzer.compute('random_spikes', max_spikes_per_unit=max_spikes_per_unit)
     analyzer.compute([
-        'random_spikes',
         'waveforms',
         'noise_levels',
         'templates',
@@ -267,15 +279,17 @@ def run_tprime(run, config):
     """
     Run TPrime to remap spike times from each probe's clock to the NI (reference) clock.
 
-    Sync edge files are read from whichever of catgt_read / catgt_write holds the data.
+    Sync edge files are read from catgt_read / catgt_write (never catgt_local, as only
+    the .bin and .meta are copied there, not the sync .txt files).
     Spike times (input and output) live under output_dir.
     """
     run_str = f"{run['name']}_g{run['gate']}"
     tprime_cfg = config['tprime']
-    tostream = catgt_run_dir(run, config) / tprime_cfg['tostream_file'].format(run=run_str)
+    sync_root = _catgt_sync_root(run, config)
+    tostream = sync_root / f"catgt_{run_str}" / tprime_cfg['tostream_file'].format(run=run_str)
 
     for prb in run['probes']:
-        fromstream = catgt_prb_dir(run, prb, config) / tprime_cfg['fromstream_file'].format(run=run_str, prb=prb)
+        fromstream = sync_root / f"catgt_{run_str}" / f"{run_str}_imec{prb}" / tprime_cfg['fromstream_file'].format(run=run_str, prb=prb)
         spike_in  = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec.npy'
         spike_out = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec_adj.npy'
 

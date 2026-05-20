@@ -108,7 +108,18 @@ kilosort4_params:
 
 # --- Processing settings ---
 n_jobs: 1                    # parallel workers for SpikeInterface postprocessing
-                             # n_jobs=1 is often faster for network-mounted data
+                             # n_jobs=1 is often faster for network-mounted data;
+                             # with local storage, set to 8-16 for large speed gains
+
+chunk_duration: '1s'         # size of data chunks processed in parallel during waveform extraction
+                             # larger chunks (e.g. '5s', '10s') reduce overhead and speed up processing
+                             # on local storage; memory per worker scales linearly (1s ≈ 23 MB/worker,
+                             # 10s ≈ 230 MB/worker), so increase n_jobs × chunk_duration cautiously
+
+max_spikes_per_unit: 500     # number of random spikes sampled per unit for waveform extraction
+                             # reducing this (e.g. 200) speeds up extraction and PCA significantly
+                             # for high-firing-rate recordings (e.g. brainstem); has no effect on
+                             # spike sorting quality, only on metric precision
 force_rerun_catgt: false     # set true to redo CatGT even if output already exists
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
 force_rerun_metrics: false   # set true to recompute metrics without re-sorting
