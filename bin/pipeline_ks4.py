@@ -213,7 +213,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
             'isi_histograms'
         ])
         analyzer.compute('template_metrics', include_multi_channel_metrics=True)
-        analyzer.compute('quality_metrics', qm_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
+        analyzer.compute('quality_metrics', metric_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
         return analyzer
 
     print(f"  [{_ts()}] [Postprocessing] Computing waveforms and quality metrics for probe {prb}...")
@@ -239,7 +239,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         'isi_histograms',
     ])
     analyzer.compute('template_metrics', include_multi_channel_metrics=True)
-    analyzer.compute('quality_metrics', qm_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
+    analyzer.compute('quality_metrics', metric_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
     return analyzer
 
 

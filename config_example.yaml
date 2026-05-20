@@ -119,8 +119,8 @@ force_rerun_curation: false  # set true to redo curation even if labels already 
 # Speeds up processing when the raw .bin lives on a slow network mount.
 # The pipeline copies the .bin and .meta to catgt_local before sorting,
 # so Kilosort, SpikeInterface, and Bombcell all read from local disk.
-copy_raw_to_local: false     # set true to copy raw .bin to local storage first
-catgt_local:                 # local path for the copy (required if copy_raw_to_local: true)
+copy_raw_to_local: true     # set true to copy raw .bin to local storage first
+catgt_local: /mnt/raidstorage/tmp_kilosort   # local path for the copy (required if copy_raw_to_local: true)
                              # e.g. /mnt/raidstorage/local_raw
 clear_local_copy: false      # set true to delete the local copy after successful completion
                              # useful during debugging to force a fresh copy each run

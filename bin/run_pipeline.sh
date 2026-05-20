@@ -14,9 +14,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 screen -S "$SESSION" -X quit 2>/dev/null || true
 screen -dmS "$SESSION" bash -c "
     set -e
-    micromamba run -n si_ks4 python \"$SCRIPT_DIR/pipeline_ks4.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\"
+    TQDM_DISABLE=1 micromamba run -n si_ks4 python \"$SCRIPT_DIR/pipeline_ks4.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\"
     echo '--- Sorting complete, starting curation ---' | tee -a \"$(pwd)/$LOG\"
-    micromamba run -n curation python \"$SCRIPT_DIR/pipeline_curation.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\"
+    TQDM_DISABLE=1 micromamba run -n curation python \"$SCRIPT_DIR/pipeline_curation.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\"
     echo '--- Pipeline complete ---' | tee -a \"$(pwd)/$LOG\"
 "
 

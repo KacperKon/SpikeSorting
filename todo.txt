@@ -1,10 +1,5 @@
 
-KS pipeline:
-
-Curation pipeline:
-5) Add Bobmbcell
-6) Add UnitRefine
-
+Pipeline:
 
 Data processing / general
 
@@ -24,4 +19,13 @@ Done:
 5) Install CatGT and TPrime on the Linux machine
 10) Add waveform metrics: exp_decay, velocity_above, spread, velocity_below
 6) Add git ignore (logs and configs)
+5) Add Bobmbcell
+6) Add UnitRefine
+-) Merge sorting and curation into one pipeline
+-) Verify if Bombcell works
+-) Introduce downloading / writing catgt file locally to improve speed
+ ---> Should we change the njobs in KS / SI / Bombcell after this step?
+-) Change folder structure? After running, I want to easily verify results with UnitRefine GUI
+-) A stupid question: the log files are extremely long becayse they print the progress bar that Spike Interface gives out as multiple sepaarte lines. Is there a better way?
+
 
