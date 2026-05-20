@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 screen -S "$SESSION" -X quit 2>/dev/null || true
 screen -dmS "$SESSION" bash -c \
-    "TQDM_DISABLE=1 PYTHONUNBUFFERED=1 micromamba run -n curation python \"$SCRIPT_DIR/pipeline_curation.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee -a \"$(pwd)/$LOG\""
+    "PYTHONUNBUFFERED=1 micromamba run -n curation python \"$SCRIPT_DIR/pipeline_curation.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee >(grep -av $'\\r' >> \"$(pwd)/$LOG\")"
 
 echo "Curation started in screen session '$SESSION'."
 echo "  Monitor live : screen -r $SESSION"
