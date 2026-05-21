@@ -62,11 +62,11 @@ def _label_color(label):
     if label is None:
         return '#7f8c8d'
     s = str(label).lower()
-    if 'good' in s or 'neural' in s:
+    if s == 'sua' or 'good' in s or 'neural' in s:
         return '#27ae60'
     if 'mua' in s:
         return '#e67e22'
-    if 'noise' in s:
+    if s in ('not-sua', 'not_sua') or 'noise' in s:
         return '#e74c3c'
     if 'non' in s or 'somatic' in s:
         return '#8e44ad'
@@ -109,7 +109,7 @@ def _get_ext(analyzer, name):
         return None
 
 
-def preload_ext_data(analyzer):
+def preload_ext_data(analyzer, bc_dir=None):
     """Load all extension data and per-unit amplitude arrays once before the plotting loop."""
     fs = analyzer.sorting.get_sampling_frequency()
     data = {
@@ -121,8 +121,30 @@ def preload_ext_data(analyzer):
         'unit_times': {},
         'unit_amps':  {},
         'amp_error':  None,
+        # Bombcell
+        'bc_wf':         None,  # (n_units, n_channels, n_samples)
+        'bc_ch':         None,  # (n_units,) best channel index per unit
+        'bc_qm':         {},    # uid → row Series from _bc_qMetrics.csv
+        'bc_peak_loc':   {},    # uid → sample index of main peak (for duration)
+        'bc_trough_loc': {},    # uid → sample index of main trough (for duration)
     }
 
+    if bc_dir is not None:
+        try:
+            import pandas as _pd
+            bc_qm_df = _pd.read_csv(Path(bc_dir) / 'templates._bc_qMetrics.csv', index_col=0)
+            for _, row in bc_qm_df.iterrows():
+                data['bc_qm'][int(row['phy_clusterID'])] = row
+            data['bc_wf'] = np.load(Path(bc_dir) / 'templates._bc_rawWaveforms.npy')
+            data['bc_ch'] = np.load(Path(bc_dir) / 'templates._bc_rawWaveformPeakChannels.npy').astype(int)
+            print(f"  [Report] Bombcell waveforms loaded: {data['bc_wf'].shape}")
+            import pickle
+            with open(Path(bc_dir) / 'for_GUI' / 'gui_data.pkl', 'rb') as _f:
+                _gui = pickle.load(_f)
+            data['bc_peak_loc']   = _gui.get('peak_loc_for_duration', {})
+            data['bc_trough_loc'] = _gui.get('trough_loc_for_duration', {})
+        except Exception as e:
+            print(f"  [Report] Warning: failed to load Bombcell data: {e}")
 
     amp_ext = analyzer.get_extension('spike_amplitudes')
     if amp_ext is not None:
@@ -175,13 +197,24 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                   top=0.92, bottom=0.08, left=0.07, right=0.97)
 
     # ── Waveforms 3×2 ────────────────────────────────────────────────
-    templates = ext_data['templates']
-    if templates is not None:
-        unit_tmpl = templates[unit_idx]           # (n_samples, n_channels)
+    # Prefer Bombcell waveforms (n_units, n_channels, n_samples); fall back to SI templates
+    bc_wf_all = ext_data['bc_wf']
+    bc_ch_all = ext_data['bc_ch']
+    if bc_wf_all is not None and unit_idx < len(bc_wf_all):
+        unit_tmpl = bc_wf_all[unit_idx].T          # → (n_samples, n_channels)
+        best_ch   = int(bc_ch_all[unit_idx])
+    else:
+        unit_tmpl = ext_data['templates'][unit_idx] if ext_data['templates'] is not None else None
+        best_ch   = None
+
+    if unit_tmpl is not None:
         n_samples = unit_tmpl.shape[0]
         t_ms = np.arange(n_samples) / fs * 1000
         best_6 = np.argsort(np.ptp(unit_tmpl, axis=0))[::-1][:6]
-        best_ch = best_6[0]
+        if best_ch is None:
+            best_ch = best_6[0]
+        # Ensure best_ch appears first in the 6-channel list
+        best_6 = np.array([best_ch] + [c for c in best_6 if c != best_ch][:5])
 
         gs_wf = GridSpecFromSubplotSpec(3, 2, subplot_spec=gs[0, 0],
                                         hspace=0.05, wspace=0.05)
@@ -195,48 +228,15 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                 sp.set_visible(False)
 
             if ch_idx == best_ch:
-                trough_i = int(np.argmin(wf))
-                peak_i = int(np.argmax(wf[trough_i:])) + trough_i
-                t_val = wf[trough_i]
-                p_val = wf[peak_i]
-
-                # Trough (red) and peak (blue) markers
-                ax.plot(t_ms[trough_i], t_val, 'o', color='#e74c3c', ms=5, zorder=5)
-                ax.plot(t_ms[peak_i], p_val, 'o', color='#3498db', ms=5, zorder=5)
-
-                # Half-width bar (green) at half trough depth
-                half = t_val / 2.0
-                below = wf <= half
-                crossings = np.where(np.diff(below.astype(int)))[0]
-                if len(crossings) >= 2:
-                    ax.hlines(half, t_ms[crossings[0]], t_ms[crossings[1]],
-                              colors='#27ae60', lw=2, zorder=5)
-
-                # Trough-to-peak double-headed arrow (purple)
-                arrow_y = t_val * 1.20
-                ax.annotate('', xy=(t_ms[peak_i], arrow_y),
-                            xytext=(t_ms[trough_i], arrow_y),
-                            arrowprops=dict(arrowstyle='<->', color='#8e44ad', lw=1.2))
-
-                # Recovery slope — tangent through midpoint of upstroke (orange dashed)
-                gap = peak_i - trough_i
-                if gap > 10:
-                    win = max(3, gap // 4)
-                    mid = trough_i + gap // 2
-                    sl = slice(max(0, mid - win), mid + win)
-                    if len(t_ms[sl]) > 2:
-                        m, b = np.polyfit(t_ms[sl], wf[sl], 1)
-                        x_ext = np.array([t_ms[trough_i], t_ms[peak_i]])
-                        ax.plot(x_ext, m * x_ext + b, '--', color='#e67e22',
-                                lw=1.2, alpha=0.85, zorder=4)
-
-                # Scale bar (bottom-left corner)
                 from matplotlib.lines import Line2D
-                t_range = t_ms[-1] - t_ms[0]
-                a_range = np.ptp(wf)
-                bar_t = 0.5  # ms
-                bar_a_raw = a_range * 0.2
-                bar_a = next((v for v in [5,10,20,50,100,200,500] if v >= bar_a_raw), 500)
+                wf_source = 'Bombcell' if bc_wf_all is not None else 'SpikeInterface'
+
+                # ── Scale bar (always shown) ──────────────────────────
+                t_range   = t_ms[-1] - t_ms[0]
+                a_range   = np.ptp(wf)
+                bar_t     = 0.5
+                bar_a     = next((v for v in [5,10,20,50,100,200,500]
+                                  if v >= a_range * 0.2), 500)
                 x0 = t_ms[0] + t_range * 0.05
                 y0 = wf.min() - a_range * 0.08
                 ax.hlines(y0, x0, x0 + bar_t, colors='k', lw=1.5, zorder=6, clip_on=False)
@@ -246,21 +246,60 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                 ax.text(x0 - t_range * 0.03, y0 + bar_a / 2,
                         f'{bar_a} μV', fontsize=5, ha='right', va='center', clip_on=False)
 
-                # Legend for coloured annotations
-                legend_elems = [
-                    Line2D([0],[0], marker='o', color='w', markerfacecolor='#e74c3c', ms=4, label='trough'),
-                    Line2D([0],[0], marker='o', color='w', markerfacecolor='#3498db', ms=4, label='peak'),
-                    Line2D([0],[0], color='#27ae60', lw=1.5, label='½-width'),
-                    Line2D([0],[0], color='#8e44ad', lw=1.2, label='trough→peak'),
-                    Line2D([0],[0], color='#e67e22', lw=1, ls='--', label='recovery'),
-                ]
-                ax.legend(handles=legend_elems, loc='upper right', fontsize=5,
-                          framealpha=0.75, handlelength=1.2, borderpad=0.3,
-                          labelspacing=0.15, handletextpad=0.4, title='best ch',
-                          title_fontsize=5)
+                # ── Annotations: Bombcell positions only ─────────────
+                bc_peak   = ext_data['bc_peak_loc'].get(uid)
+                bc_trough = ext_data['bc_trough_loc'].get(uid)
+                if bc_peak is not None and bc_trough is not None:
+                    peak_i   = int(bc_peak)
+                    trough_i = int(bc_trough)
+                    t_val    = wf[trough_i]
+                    p_val    = wf[peak_i]
+
+                    ax.plot(t_ms[trough_i], t_val, 'o', color='#e74c3c', ms=5, zorder=5)
+                    ax.plot(t_ms[peak_i],   p_val, 'o', color='#3498db', ms=5, zorder=5)
+
+                    # Half-width bar at half trough depth
+                    half = t_val / 2.0
+                    crossings = np.where(np.diff((wf <= half).astype(int)))[0]
+                    if len(crossings) >= 2:
+                        ax.hlines(half, t_ms[crossings[0]], t_ms[crossings[1]],
+                                  colors='#27ae60', lw=2, zorder=5)
+
+                    # Trough-to-peak arrow
+                    arrow_y = t_val * 1.20
+                    ax.annotate('', xy=(t_ms[peak_i], arrow_y),
+                                xytext=(t_ms[trough_i], arrow_y),
+                                arrowprops=dict(arrowstyle='<->', color='#8e44ad', lw=1.2))
+
+                    # Recovery slope tangent
+                    gap = abs(peak_i - trough_i)
+                    if gap > 10:
+                        lo, hi = min(trough_i, peak_i), max(trough_i, peak_i)
+                        mid = (lo + hi) // 2
+                        sl  = slice(max(0, mid - gap // 4), mid + gap // 4)
+                        if len(t_ms[sl]) > 2:
+                            m, b = np.polyfit(t_ms[sl], wf[sl], 1)
+                            x_ext = np.array([t_ms[lo], t_ms[hi]])
+                            ax.plot(x_ext, m * x_ext + b, '--', color='#e67e22',
+                                    lw=1.2, alpha=0.85, zorder=4)
+
+                    legend_elems = [
+                        Line2D([0],[0], marker='o', color='w', markerfacecolor='#e74c3c', ms=4, label='trough'),
+                        Line2D([0],[0], marker='o', color='w', markerfacecolor='#3498db', ms=4, label='peak'),
+                        Line2D([0],[0], color='#27ae60', lw=1.5, label='½-width'),
+                        Line2D([0],[0], color='#8e44ad', lw=1.2, label='trough→peak'),
+                        Line2D([0],[0], color='#e67e22', lw=1, ls='--', label='recovery'),
+                    ]
+                    ax.legend(handles=legend_elems, loc='upper right', fontsize=7,
+                              framealpha=0.75, handlelength=1.4, borderpad=0.4,
+                              labelspacing=0.2, handletextpad=0.5,
+                              title=wf_source, title_fontsize=7)
+                else:
+                    ax.text(0.97, 0.96, wf_source, transform=ax.transAxes,
+                            fontsize=5, va='top', ha='right', color='#7f8c8d')
     else:
         ax = fig.add_subplot(gs[0, 0])
-        ax.text(0.5, 0.5, 'Templates not available', ha='center', va='center',
+        ax.text(0.5, 0.5, 'Waveforms not available', ha='center', va='center',
                 transform=ax.transAxes)
 
     # ── ISI histogram ────────────────────────────────────────────────
@@ -299,7 +338,18 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     if unit_idx in ext_data['unit_times']:
         u_times = ext_data['unit_times'][unit_idx]
         u_amps  = ext_data['unit_amps'][unit_idx]
-        ax_amp.plot(u_times, u_amps, ',', color='#2c3e50', alpha=0.35, rasterized=True)
+        ax_amp.scatter(u_times, u_amps, s=3, alpha=0.5, color='#2c3e50',
+                       rasterized=True, linewidths=0)
+        # Binned average
+        if len(u_times) >= 10:
+            n_bins = min(50, len(u_times) // 5)
+            edges = np.linspace(u_times[0], u_times[-1], n_bins + 1)
+            bx = [(edges[i] + edges[i+1]) / 2 for i in range(n_bins)
+                  if ((u_times >= edges[i]) & (u_times < edges[i+1])).sum() > 0]
+            by = [u_amps[(u_times >= edges[i]) & (u_times < edges[i+1])].mean()
+                  for i in range(n_bins)
+                  if ((u_times >= edges[i]) & (u_times < edges[i+1])).sum() > 0]
+            ax_amp.plot(bx, by, color='#e74c3c', lw=1.5, zorder=5)
         ax_amp.set_xlabel('Time (min)', fontsize=9)
         ax_amp.set_ylabel('Amplitude (μV)', fontsize=9)
     elif ext_data['amp_error']:
@@ -318,32 +368,52 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     qm = ext_data['quality_metrics']
     tm = ext_data['template_metrics']
 
-    def val(df, col, fmt='.3f'):
+    def val(df, col, fmt='.3f', mult=1.0):
         if df is None or uid not in df.index or col not in df.columns:
             return 'N/A'
         v = df.loc[uid, col]
-        return 'N/A' if (isinstance(v, float) and np.isnan(v)) else f'{v:{fmt}}'
+        if isinstance(v, float) and np.isnan(v):
+            return 'N/A'
+        return f'{v * mult:{fmt}}'
+
+    # Prefer Bombcell waveform metrics (samples → ms via /fs*1000); fall back to SI
+    bc_row = ext_data['bc_qm'].get(uid)
+
+    def bc_val(col, fmt, mult=1.0):
+        if bc_row is None or col not in bc_row.index:
+            return 'N/A'
+        v = bc_row[col]
+        if isinstance(v, float) and np.isnan(v):
+            return 'N/A'
+        return f'{v * mult:{fmt}}'
 
     cell_type_rows = [
-        ('peak_to_trough_duration',    'Trough-to-peak (ms)', tm, '.3f'),
-        ('trough_half_width',          'Half-width (ms)',      tm, '.3f'),
-        ('peak_after_to_trough_ratio', 'Peak/trough ratio',    tm, '.3f'),
-        ('recovery_slope',             'Recovery slope',       tm, '.4f'),
+        # (label, value_string)
+        ('Trough-to-peak (ms)', bc_val('waveformDuration_peakTrough', '.3f', 1000.0 / fs)
+                                if bc_row is not None
+                                else val(tm, 'peak_to_trough_duration', '.3f', 1000.0)),
+        ('Half-width (ms)',     bc_val('mainTrough_width', '.3f', 1000.0 / fs)
+                                if bc_row is not None
+                                else val(tm, 'trough_half_width', '.3f', 1000.0)),
+        ('Peak/trough ratio',   bc_val('mainPeakToTroughRatio', '.3f')
+                                if bc_row is not None
+                                else val(tm, 'peak_after_to_trough_ratio', '.3f')),
+        ('Recovery slope',      val(tm, 'recovery_slope', '.4f')),
     ]
     quality_rows = [
-        ('firing_rate',          'Firing rate (Hz)',   qm, '.2f'),
-        ('snr',                  'SNR',                qm, '.2f'),
-        ('isi_violations_ratio', 'ISI violations (%)', qm, '.4f'),
-        ('presence_ratio',       'Presence ratio',     qm, '.3f'),
+        ('firing_rate',          'Firing rate (Hz)',   qm, '.2f', 1.0),
+        ('snr',                  'SNR',                qm, '.2f', 1.0),
+        ('isi_violations_ratio', 'ISI violations (%)', qm, '.4f', 1.0),
+        ('presence_ratio',       'Presence ratio',     qm, '.3f', 1.0),
     ]
 
     y = 0.97
     ax_m.text(0.0, y, '── Waveform ──', fontsize=9, fontweight='bold',
               transform=ax_m.transAxes, va='top', color='#2c3e50')
     y -= 0.12
-    for key, label, df, fmt in cell_type_rows:
+    for label, value_str in cell_type_rows:
         ax_m.text(0.03, y, label, fontsize=8.5, transform=ax_m.transAxes, va='top')
-        ax_m.text(0.85, y, val(df, key, fmt), fontsize=8.5, transform=ax_m.transAxes,
+        ax_m.text(0.85, y, value_str, fontsize=8.5, transform=ax_m.transAxes,
                   va='top', ha='right', fontweight='bold', color='#2980b9')
         y -= 0.11
 
@@ -351,9 +421,9 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     ax_m.text(0.0, y, '── Quality ──', fontsize=9, fontweight='bold',
               transform=ax_m.transAxes, va='top', color='#2c3e50')
     y -= 0.12
-    for key, label, df, fmt in quality_rows:
+    for col, label, df, fmt, mult in quality_rows:
         ax_m.text(0.03, y, label, fontsize=8.5, transform=ax_m.transAxes, va='top')
-        ax_m.text(0.85, y, val(df, key, fmt), fontsize=8.5, transform=ax_m.transAxes,
+        ax_m.text(0.85, y, val(df, col, fmt, mult), fontsize=8.5, transform=ax_m.transAxes,
                   va='top', ha='right', fontweight='bold', color='#2980b9')
         y -= 0.11
 
@@ -429,19 +499,25 @@ def plot_summary_page(run, prb, unit_ids, ks_labels, ur_labels, ur_conf, bc_labe
 
 # --- Unit ordering ---
 
+def _is_good_label(label):
+    """Return True for labels that represent well-isolated single units."""
+    s = str(label).lower()
+    return s in ('sua', 'good', 'neural') or 'good' in s or 'neural' in s
+
+
 def _sort_units(unit_ids, ur_labels, ur_conf):
     """Sort units from best to worst:
-    Good units descending by confidence, then Noise units ascending by confidence
-    (least confident noise = most borderline first, most confident noise = clearly noise last).
+    Single-unit / good labels descending by confidence, then everything else
+    ascending by confidence (least confident = most borderline first).
     """
     def key(uid):
         uid_int = int(uid)
         label = ur_labels.get(uid_int, 'N/A')
         conf = ur_conf.get(uid_int, 0.5)
-        if str(label).lower() in ('good', 'neural'):
-            return (0, -conf)   # Good first, highest confidence first
+        if _is_good_label(label):
+            return (0, -conf)
         else:
-            return (1, conf)    # Noise after, lowest confidence first
+            return (1, conf)
     return sorted(unit_ids, key=key)
 
 
@@ -469,13 +545,14 @@ def generate_report(run, prb, config):
     sorted_ids = _sort_units(unit_ids, ur_labels, ur_conf)
 
     print(f"  [{_ts()}] [Report] Pre-loading extensions...")
-    ext_data = preload_ext_data(analyzer)
+    bc_dir = ks4_dir(run, prb, config) / 'bombcell'
+    ext_data = preload_ext_data(analyzer, bc_dir=bc_dir if bc_dir.exists() else None)
 
     n_failed = 0
     with PdfPages(out_path) as pdf:
         summary = plot_summary_page(run, prb, unit_ids, ks_labels, ur_labels, ur_conf, bc_labels,
                                     ks4_dir(run, prb, config))
-        pdf.savefig(summary, dpi=100)
+        pdf.savefig(summary, dpi=200)
         plt.close(summary)
 
         for unit_id in sorted_ids:
@@ -483,7 +560,7 @@ def generate_report(run, prb, config):
             try:
                 fig = plot_unit_page(unit_id, unit_idx, ext_data,
                                      ks_labels, ur_labels, ur_conf, bc_labels)
-                pdf.savefig(fig, dpi=100)
+                pdf.savefig(fig, dpi=200)
                 plt.close(fig)
             except Exception as e:
                 print(f"    [Report] Warning: unit {unit_id} failed: {e}")
