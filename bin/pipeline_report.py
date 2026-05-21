@@ -123,9 +123,6 @@ def preload_ext_data(analyzer):
         'amp_error':  None,
     }
 
-    print(f"  [Report] Loaded extensions: {list(analyzer.extensions.keys())}")
-    if data['template_metrics'] is not None:
-        print(f"  [Report] Template metric columns: {list(data['template_metrics'].columns)}")
 
     amp_ext = analyzer.get_extension('spike_amplitudes')
     if amp_ext is not None:
@@ -328,11 +325,10 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
         return 'N/A' if (isinstance(v, float) and np.isnan(v)) else f'{v:{fmt}}'
 
     cell_type_rows = [
-        # (metric_key, display_label, dataframe, format)
-        ('trough_to_peak',    'Trough-to-peak (ms)', tm, '.3f'),
-        ('half_width',        'Half-width (ms)',      tm, '.3f'),
-        ('peak_trough_ratio', 'Peak/trough ratio',    tm, '.3f'),
-        ('recovery_slope',    'Recovery slope',       tm, '.4f'),
+        ('peak_to_trough_duration',    'Trough-to-peak (ms)', tm, '.3f'),
+        ('trough_half_width',          'Half-width (ms)',      tm, '.3f'),
+        ('peak_after_to_trough_ratio', 'Peak/trough ratio',    tm, '.3f'),
+        ('recovery_slope',             'Recovery slope',       tm, '.4f'),
     ]
     quality_rows = [
         ('firing_rate',          'Firing rate (Hz)',   qm, '.2f'),
