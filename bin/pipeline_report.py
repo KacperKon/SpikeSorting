@@ -101,8 +101,12 @@ def load_labels(run, prb, config):
 # --- Per-unit figure ---
 
 def _get_ext(analyzer, name):
-    ext = analyzer.get_extension(name)
-    return ext.get_data() if ext is not None else None
+    try:
+        ext = analyzer.get_extension(name)
+        return ext.get_data() if ext is not None else None
+    except Exception as e:
+        print(f"  [Report] Warning: failed to load extension '{name}': {e}")
+        return None
 
 
 def preload_ext_data(analyzer):
@@ -119,11 +123,20 @@ def preload_ext_data(analyzer):
         'amp_error':  None,
     }
 
+    print(f"  [Report] Loaded extensions: {list(analyzer.extensions.keys())}")
+    if data['template_metrics'] is not None:
+        print(f"  [Report] Template metric columns: {list(data['template_metrics'].columns)}")
+
     amp_ext = analyzer.get_extension('spike_amplitudes')
     if amp_ext is not None:
         try:
             raw = amp_ext.get_data()
-            all_amps = np.concatenate(raw) if isinstance(raw, list) else raw
+            if isinstance(raw, (list, tuple)):
+                all_amps = np.concatenate(raw)
+            elif isinstance(raw, np.ndarray) and raw.ndim >= 1:
+                all_amps = raw.ravel()
+            else:
+                all_amps = np.array(raw).ravel()
             sv = analyzer.sorting.to_spike_vector()
             for unit_idx, unit_id in enumerate(analyzer.unit_ids):
                 mask = sv['unit_index'] == unit_idx
@@ -220,12 +233,34 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                         ax.plot(x_ext, m * x_ext + b, '--', color='#e67e22',
                                 lw=1.2, alpha=0.85, zorder=4)
 
-                ax.text(0.03, 0.96, 'best ch', transform=ax.transAxes,
-                        fontsize=6, va='top', color='#7f8c8d')
+                # Scale bar (bottom-left corner)
+                from matplotlib.lines import Line2D
+                t_range = t_ms[-1] - t_ms[0]
+                a_range = np.ptp(wf)
+                bar_t = 0.5  # ms
+                bar_a_raw = a_range * 0.2
+                bar_a = next((v for v in [5,10,20,50,100,200,500] if v >= bar_a_raw), 500)
+                x0 = t_ms[0] + t_range * 0.05
+                y0 = wf.min() - a_range * 0.08
+                ax.hlines(y0, x0, x0 + bar_t, colors='k', lw=1.5, zorder=6, clip_on=False)
+                ax.vlines(x0, y0, y0 + bar_a, colors='k', lw=1.5, zorder=6, clip_on=False)
+                ax.text(x0 + bar_t / 2, y0 - a_range * 0.10,
+                        f'{bar_t} ms', fontsize=5, ha='center', va='top', clip_on=False)
+                ax.text(x0 - t_range * 0.03, y0 + bar_a / 2,
+                        f'{bar_a} μV', fontsize=5, ha='right', va='center', clip_on=False)
 
-        # Time-scale bar: 0.5 ms
-        ax_last = fig.axes[-1]
-        ax_last.set_xlabel('← 0.5 ms →', fontsize=7, labelpad=2)
+                # Legend for coloured annotations
+                legend_elems = [
+                    Line2D([0],[0], marker='o', color='w', markerfacecolor='#e74c3c', ms=4, label='trough'),
+                    Line2D([0],[0], marker='o', color='w', markerfacecolor='#3498db', ms=4, label='peak'),
+                    Line2D([0],[0], color='#27ae60', lw=1.5, label='½-width'),
+                    Line2D([0],[0], color='#8e44ad', lw=1.2, label='trough→peak'),
+                    Line2D([0],[0], color='#e67e22', lw=1, ls='--', label='recovery'),
+                ]
+                ax.legend(handles=legend_elems, loc='upper right', fontsize=5,
+                          framealpha=0.75, handlelength=1.2, borderpad=0.3,
+                          labelspacing=0.15, handletextpad=0.4, title='best ch',
+                          title_fontsize=5)
     else:
         ax = fig.add_subplot(gs[0, 0])
         ax.text(0.5, 0.5, 'Templates not available', ha='center', va='center',
@@ -240,12 +275,17 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             isi_hists, isi_bins = isi_data
             unit_isi = isi_hists[unit_idx]
             bw = np.diff(isi_bins)[0]
-            centers = isi_bins[:-1] + bw / 2
-            ax_isi.bar(centers, unit_isi, width=bw * 0.9,
+            # Mirror around 0 to show refractory period as gap in the middle
+            n_half = min(int(np.ceil(50.0 / bw)), len(unit_isi))
+            vals = unit_isi[:n_half]
+            centers = isi_bins[:n_half] + bw / 2
+            sym_centers = np.concatenate([-centers[::-1], centers])
+            sym_vals = np.concatenate([vals[::-1], vals])
+            ax_isi.bar(sym_centers, sym_vals, width=bw * 0.9,
                        color='#3498db', alpha=0.75, edgecolor='none')
-            ax_isi.axvline(1.5, color='#e74c3c', ls='--', lw=1, alpha=0.8,
-                           label='1.5 ms')
-            ax_isi.set_xlim(0, 100)
+            ax_isi.axvspan(-1.5, 1.5, color='#e74c3c', alpha=0.15, label='±1.5 ms')
+            ax_isi.axvline(0, color='k', lw=0.5, alpha=0.4)
+            ax_isi.set_xlim(-50, 50)
         except Exception as e:
             ax_isi.text(0.5, 0.5, f'ISI error:\n{e}', ha='center', va='center',
                         transform=ax_isi.transAxes, fontsize=7)
@@ -302,7 +342,7 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     ]
 
     y = 0.97
-    ax_m.text(0.0, y, '── Cell type ──', fontsize=9, fontweight='bold',
+    ax_m.text(0.0, y, '── Waveform ──', fontsize=9, fontweight='bold',
               transform=ax_m.transAxes, va='top', color='#2c3e50')
     y -= 0.12
     for key, label, df, fmt in cell_type_rows:

@@ -89,10 +89,9 @@ def run_unitrefine(run, prb, config):
         trusted=['numpy.dtype'],
     )
 
-    # Save in the format expected by the UnitRefine GUI (quality: Good/Noise)
     gui_labels = pd.DataFrame({
         'unit_id': labels.index,
-        'quality': labels['prediction'].map({'neural': 'Good', 'noise': 'Noise'}),
+        'quality': labels['prediction'],
         'confidence': labels['probability'],
     })
     gui_labels.to_csv(out_path, index=False)
