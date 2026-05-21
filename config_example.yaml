@@ -124,7 +124,9 @@ force_rerun_catgt: false     # set true to redo CatGT even if output already exi
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
 force_rerun_metrics: false   # set true to recompute metrics without re-sorting
 force_rerun_tprime: false    # set true to redo TPrime alignment
-force_rerun_curation: false  # set true to redo curation even if labels already exist
+force_rerun_unitrefine: false # set true to redo UnitRefine classification
+force_rerun_bombcell: false  # set true to redo Bombcell quality metrics
+force_rerun_report: false    # set true to regenerate the per-unit PDF report
 
 # --- Local copy settings ---
 # Speeds up processing when the raw .bin lives on a slow network mount.

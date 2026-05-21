@@ -176,7 +176,9 @@ Set the relevant flag to `true` in your config and rerun:
 | `force_rerun_kilosort: true` | Redo sorting + all postprocessing from scratch |
 | `force_rerun_metrics: true` | Recompute waveforms and metrics only (skip re-sorting) |
 | `force_rerun_tprime: true` | Redo TPrime spike time alignment |
-| `force_rerun_curation: true` | Redo UnitRefine classification even if labels exist |
+| `force_rerun_unitrefine: true` | Redo UnitRefine classification even if labels exist |
+| `force_rerun_bombcell: true` | Redo Bombcell quality metrics even if labels exist |
+| `force_rerun_report: true` | Regenerate the per-unit PDF report |
 
 ---
 

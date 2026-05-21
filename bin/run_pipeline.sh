@@ -17,6 +17,8 @@ screen -dmS "$SESSION" bash -c "
     PYTHONUNBUFFERED=1 micromamba run -n si_ks4 python \"$SCRIPT_DIR/pipeline_ks4.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee >(grep -av $'\\r' >> \"$(pwd)/$LOG\")
     echo '--- Sorting complete, starting curation ---' | tee -a \"$(pwd)/$LOG\"
     PYTHONUNBUFFERED=1 micromamba run -n curation python \"$SCRIPT_DIR/pipeline_curation.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee >(grep -av $'\\r' >> \"$(pwd)/$LOG\")
+    echo '--- Curation complete, generating report ---' | tee -a \"$(pwd)/$LOG\"
+    PYTHONUNBUFFERED=1 micromamba run -n si_ks4 python \"$SCRIPT_DIR/pipeline_report.py\" \"$(pwd)/$CONFIG\" 2>&1 | tee >(grep -av $'\\r' >> \"$(pwd)/$LOG\")
     echo '--- Pipeline complete ---' | tee -a \"$(pwd)/$LOG\"
 "
 

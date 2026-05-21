@@ -76,7 +76,7 @@ def run_unitrefine(run, prb, config):
         print(f"  [UnitRefine] No analyzer found for probe {prb}, skipping.")
         return
 
-    if out_path.exists() and not config.get('force_rerun_curation'):
+    if out_path.exists() and not config.get('force_rerun_unitrefine'):
         print(f"  [UnitRefine] Labels exist for probe {prb}, skipping.")
         return
 
@@ -93,6 +93,7 @@ def run_unitrefine(run, prb, config):
     gui_labels = pd.DataFrame({
         'unit_id': labels.index,
         'quality': labels['prediction'].map({'neural': 'Good', 'noise': 'Noise'}),
+        'confidence': labels['probability'],
     })
     gui_labels.to_csv(out_path, index=False)
     print(f"  [{_ts()}] [UnitRefine] Labels saved: {out_path}")
@@ -113,7 +114,7 @@ def run_bombcell(run, prb, config):
         print(f"  [Bombcell] No KS4 output found for probe {prb}, skipping.")
         return
 
-    if out_path.exists() and not config.get('force_rerun_curation'):
+    if out_path.exists() and not config.get('force_rerun_bombcell'):
         print(f"  [Bombcell] Labels exist for probe {prb}, skipping.")
         return
 
