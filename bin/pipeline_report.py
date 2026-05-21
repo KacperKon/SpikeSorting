@@ -100,14 +100,49 @@ def load_labels(run, prb, config):
 
 # --- Per-unit figure ---
 
-def _get_ext_data(analyzer, name):
+def _get_ext(analyzer, name):
     ext = analyzer.get_extension(name)
     return ext.get_data() if ext is not None else None
 
 
-def plot_unit_page(unit_id, unit_idx, analyzer, ks_labels, ur_labels, ur_conf, bc_labels):
-    fig = plt.figure(figsize=(14, 10))
+def preload_ext_data(analyzer):
+    """Load all extension data and per-unit amplitude arrays once before the plotting loop."""
     fs = analyzer.sorting.get_sampling_frequency()
+    data = {
+        'fs': fs,
+        'templates':        _get_ext(analyzer, 'templates'),
+        'quality_metrics':  _get_ext(analyzer, 'quality_metrics'),
+        'template_metrics': _get_ext(analyzer, 'template_metrics'),
+        'isi_histograms':   _get_ext(analyzer, 'isi_histograms'),
+        'unit_times': {},
+        'unit_amps':  {},
+        'amp_error':  None,
+    }
+
+    amp_ext = analyzer.get_extension('spike_amplitudes')
+    if amp_ext is not None:
+        try:
+            raw = amp_ext.get_data()
+            all_amps = np.concatenate(raw) if isinstance(raw, list) else raw
+            sv = analyzer.sorting.to_spike_vector()
+            for unit_idx, unit_id in enumerate(analyzer.unit_ids):
+                mask = sv['unit_index'] == unit_idx
+                times = sv['sample_index'][mask] / fs / 60
+                amps  = np.abs(all_amps[mask])
+                if len(times) > 5000:
+                    idx = np.linspace(0, len(times) - 1, 5000, dtype=int)
+                    times, amps = times[idx], amps[idx]
+                data['unit_times'][unit_idx] = times
+                data['unit_amps'][unit_idx]  = amps
+        except Exception as e:
+            data['amp_error'] = str(e)
+
+    return data
+
+
+def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, bc_labels):
+    fig = plt.figure(figsize=(14, 10))
+    fs  = ext_data['fs']
     uid = int(unit_id)
 
     # ── Colour-coded header ───────────────────────────────────────────
@@ -130,7 +165,7 @@ def plot_unit_page(unit_id, unit_idx, analyzer, ks_labels, ur_labels, ur_conf, b
                   top=0.92, bottom=0.08, left=0.07, right=0.97)
 
     # ── Waveforms 3×2 ────────────────────────────────────────────────
-    templates = _get_ext_data(analyzer, 'templates')
+    templates = ext_data['templates']
     if templates is not None:
         unit_tmpl = templates[unit_idx]           # (n_samples, n_channels)
         n_samples = unit_tmpl.shape[0]
@@ -198,7 +233,7 @@ def plot_unit_page(unit_id, unit_idx, analyzer, ks_labels, ur_labels, ur_conf, b
 
     # ── ISI histogram ────────────────────────────────────────────────
     ax_isi = fig.add_subplot(gs[0, 1])
-    isi_data = _get_ext_data(analyzer, 'isi_histograms')
+    isi_data = ext_data['isi_histograms']
     if isi_data is not None:
         try:
             # SI returns (histograms, bins) tuple; bins in ms
@@ -224,24 +259,15 @@ def plot_unit_page(unit_id, unit_idx, analyzer, ks_labels, ur_labels, ur_conf, b
 
     # ── Amplitude over time ──────────────────────────────────────────
     ax_amp = fig.add_subplot(gs[1, 0])
-    amp_ext = analyzer.get_extension('spike_amplitudes')
-    if amp_ext is not None:
-        try:
-            all_amps = np.concatenate(amp_ext.get_data())
-            sv = analyzer.sorting.to_spike_vector()
-            mask = sv['unit_index'] == unit_idx
-            u_amps = np.abs(all_amps[mask])
-            u_times = sv['sample_index'][mask] / fs / 60   # minutes
-            if len(u_times) > 5000:
-                idx = np.linspace(0, len(u_times) - 1, 5000, dtype=int)
-                u_times, u_amps = u_times[idx], u_amps[idx]
-            ax_amp.scatter(u_times, u_amps, s=1.5, alpha=0.35,
-                           color='#2c3e50', rasterized=True)
-            ax_amp.set_xlabel('Time (min)', fontsize=9)
-            ax_amp.set_ylabel('Amplitude (μV)', fontsize=9)
-        except Exception as e:
-            ax_amp.text(0.5, 0.5, f'Error:\n{e}', ha='center', va='center',
-                        transform=ax_amp.transAxes, fontsize=7)
+    if unit_idx in ext_data['unit_times']:
+        u_times = ext_data['unit_times'][unit_idx]
+        u_amps  = ext_data['unit_amps'][unit_idx]
+        ax_amp.plot(u_times, u_amps, ',', color='#2c3e50', alpha=0.35, rasterized=True)
+        ax_amp.set_xlabel('Time (min)', fontsize=9)
+        ax_amp.set_ylabel('Amplitude (μV)', fontsize=9)
+    elif ext_data['amp_error']:
+        ax_amp.text(0.5, 0.5, f'Error:\n{ext_data["amp_error"]}', ha='center', va='center',
+                    transform=ax_amp.transAxes, fontsize=7)
     else:
         ax_amp.text(0.5, 0.5, 'Amplitudes not available', ha='center', va='center',
                     transform=ax_amp.transAxes)
@@ -252,8 +278,8 @@ def plot_unit_page(unit_id, unit_idx, analyzer, ks_labels, ur_labels, ur_conf, b
     ax_m = fig.add_subplot(gs[1, 1])
     ax_m.axis('off')
 
-    qm = _get_ext_data(analyzer, 'quality_metrics')   # DataFrame or None
-    tm = _get_ext_data(analyzer, 'template_metrics')  # DataFrame or None
+    qm = ext_data['quality_metrics']
+    tm = ext_data['template_metrics']
 
     def val(df, col, fmt='.3f'):
         if df is None or uid not in df.index or col not in df.columns:
@@ -387,7 +413,8 @@ def _sort_units(unit_ids, ur_labels, ur_conf):
 
 def generate_report(run, prb, config):
     ana_dir = analyzer_dir(run, prb, config)
-    out_path = ks4_dir(run, prb, config) / 'report.pdf'
+    run_str = f"{run['name']}_g{run['gate']}_imec{prb}"
+    out_path = ks4_dir(run, prb, config) / f"{run_str}_report.pdf"
 
     if not ana_dir.exists():
         print(f"  [Report] No analyzer for probe {prb}, skipping.")
@@ -405,6 +432,9 @@ def generate_report(run, prb, config):
     unit_id_to_idx = {uid: i for i, uid in enumerate(unit_ids)}
     sorted_ids = _sort_units(unit_ids, ur_labels, ur_conf)
 
+    print(f"  [{_ts()}] [Report] Pre-loading extensions...")
+    ext_data = preload_ext_data(analyzer)
+
     n_failed = 0
     with PdfPages(out_path) as pdf:
         summary = plot_summary_page(run, prb, unit_ids, ks_labels, ur_labels, ur_conf, bc_labels,
@@ -415,7 +445,7 @@ def generate_report(run, prb, config):
         for unit_id in sorted_ids:
             unit_idx = unit_id_to_idx[unit_id]
             try:
-                fig = plot_unit_page(unit_id, unit_idx, analyzer,
+                fig = plot_unit_page(unit_id, unit_idx, ext_data,
                                      ks_labels, ur_labels, ur_conf, bc_labels)
                 pdf.savefig(fig, dpi=100)
                 plt.close(fig)
