@@ -107,7 +107,7 @@ def _get_ext_data(analyzer, name):
 
 def plot_unit_page(unit_id, unit_idx, analyzer, ks_labels, ur_labels, ur_conf, bc_labels):
     fig = plt.figure(figsize=(14, 10))
-    fs = analyzer.get_sampling_frequency()
+    fs = analyzer.sorting.get_sampling_frequency()
     uid = int(unit_id)
 
     # ── Colour-coded header ───────────────────────────────────────────
