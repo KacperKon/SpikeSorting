@@ -320,8 +320,16 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                 bc_peak   = ext_data['bc_peak_loc'].get(uid)
                 bc_trough = ext_data['bc_trough_loc'].get(uid)
                 if bc_peak is not None and bc_trough is not None:
-                    peak_i   = int(bc_peak)
-                    trough_i = int(bc_trough)
+                    # Re-derive positions from the plotted waveform using Bombcell's
+                    # own algorithm — the stored indices are from KS templates, which
+                    # can be shifted a few samples relative to the raw waveform.
+                    _max_loc = int(np.nanargmax(np.abs(wf)))
+                    if wf[_max_loc] > 0:
+                        peak_i   = _max_loc
+                        trough_i = int(np.nanargmin(wf[peak_i:])) + peak_i
+                    else:
+                        trough_i = _max_loc
+                        peak_i   = int(np.nanargmax(wf[trough_i:])) + trough_i
                     t_val    = wf[trough_i]
                     p_val    = wf[peak_i]
 
@@ -431,7 +439,6 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
         # Flipped amplitude histogram (bars grow leftward toward the scatter)
         ax_amp_hist.hist(u_amps, bins=40, orientation='horizontal',
                          color='#2c3e50', alpha=0.7, edgecolor='none')
-        ax_amp_hist.invert_xaxis()
         ax_amp_hist.set_xlabel('N', fontsize=7)
         ax_amp_hist.set_yticks([])
         ax_amp_hist.tick_params(labelsize=6)
