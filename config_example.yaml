@@ -128,6 +128,11 @@ force_rerun_unitrefine: false # set true to redo UnitRefine classification
 force_rerun_bombcell: false  # set true to redo Bombcell quality metrics
 force_rerun_report: false    # set true to regenerate the per-unit PDF report
 
+# --- Report copy ---
+# Optional: copy finished report PDFs to a shared location after generation.
+# Leave commented out (or omit) to skip copying.
+# report_copy_dir: /mnt/haesler_scratch/users/kacper
+
 # --- Local copy settings ---
 # Speeds up processing when the raw .bin lives on a slow network mount.
 # The pipeline copies the .bin and .meta to catgt_local before sorting,

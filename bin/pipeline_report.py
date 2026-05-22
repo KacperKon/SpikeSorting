@@ -109,7 +109,7 @@ def _get_ext(analyzer, name):
         return None
 
 
-def preload_ext_data(analyzer, bc_dir=None):
+def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
     """Load all extension data and per-unit amplitude arrays once before the plotting loop."""
     fs = analyzer.sorting.get_sampling_frequency()
     data = {
@@ -121,13 +121,29 @@ def preload_ext_data(analyzer, bc_dir=None):
         'unit_times': {},
         'unit_amps':  {},
         'amp_error':  None,
+        'unit_cv':   {},        # unit_idx → CV of ISIs
+        'unit_pct80':{},        # unit_idx → % ISIs < 80 ms
         # Bombcell
         'bc_wf':         None,  # (n_units, n_channels, n_samples)
         'bc_ch':         None,  # (n_units,) best channel index per unit
         'bc_qm':         {},    # uid → row Series from _bc_qMetrics.csv
         'bc_peak_loc':   {},    # uid → sample index of main peak (for duration)
         'bc_trough_loc': {},    # uid → sample index of main trough (for duration)
+        # Probe geometry
+        'ch_pos':   None,       # (n_ch, 2) channel x/y positions in µm
+        'ch_shank': None,       # (n_ch,) shank index per channel
     }
+
+    if ks_dir is not None:
+        try:
+            pos_path   = Path(ks_dir) / 'sorter_output' / 'channel_positions.npy'
+            shank_path = Path(ks_dir) / 'sorter_output' / 'channel_shanks.npy'
+            if pos_path.exists():
+                data['ch_pos'] = np.load(pos_path)
+            if shank_path.exists():
+                data['ch_shank'] = np.load(shank_path)
+        except Exception as e:
+            print(f"  [Report] Warning: failed to load channel geometry: {e}")
 
     if bc_dir is not None:
         try:
@@ -158,9 +174,15 @@ def preload_ext_data(analyzer, bc_dir=None):
                 all_amps = np.array(raw).ravel()
             sv = analyzer.sorting.to_spike_vector()
             for unit_idx, unit_id in enumerate(analyzer.unit_ids):
-                mask = sv['unit_index'] == unit_idx
-                times = sv['sample_index'][mask] / fs / 60
-                amps  = np.abs(all_amps[mask])
+                mask   = sv['unit_index'] == unit_idx
+                times  = sv['sample_index'][mask] / fs / 60   # minutes
+                amps   = np.abs(all_amps[mask])
+                # ISI stats from all spikes (before subsampling)
+                if len(times) > 2:
+                    isis_ms = np.diff(sv['sample_index'][mask]) / fs * 1000
+                    if isis_ms.std() > 0:
+                        data['unit_cv'][unit_idx]    = float(isis_ms.std() / isis_ms.mean())
+                    data['unit_pct80'][unit_idx] = float((isis_ms < 80).mean() * 100)
                 if len(times) > 5000:
                     idx = np.linspace(0, len(times) - 1, 5000, dtype=int)
                     times, amps = times[idx], amps[idx]
@@ -170,6 +192,50 @@ def preload_ext_data(analyzer, bc_dir=None):
             data['amp_error'] = str(e)
 
     return data
+
+
+def _plot_probe_schematic(ax, ch_indices, best_ch, ext_data):
+    """Simplified probe schematic: shank outlines + highlighted channel positions."""
+    ax.set_title('Sites', fontsize=6, pad=2)
+    ax.set_xticks([])
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+
+    ch_pos   = ext_data.get('ch_pos')
+    ch_shank = ext_data.get('ch_shank')
+
+    if ch_pos is None:
+        ax.text(0.5, 0.5, 'N/A', ha='center', va='center',
+                transform=ax.transAxes, fontsize=6, color='#7f8c8d')
+        ax.set_yticks([])
+        return
+
+    n_ch      = len(ch_pos)
+    shank_arr = ch_shank.astype(int) if ch_shank is not None else np.zeros(n_ch, dtype=int)
+
+    # Draw each shank as a thick vertical line
+    for s in np.unique(shank_arr):
+        mask     = shank_arr == s
+        x_center = ch_pos[mask, 0].mean()
+        y_bot    = ch_pos[mask, 1].min()
+        y_top    = ch_pos[mask, 1].max()
+        ax.plot([x_center, x_center], [y_bot, y_top],
+                color='#bdc3c7', lw=4, solid_capstyle='round', zorder=1)
+
+    # Mark displayed channels
+    for ch in ch_indices:
+        x, y     = ch_pos[ch, 0], ch_pos[ch, 1]
+        is_best  = (ch == best_ch)
+        ax.scatter(x, y,
+                   s=40 if is_best else 15,
+                   color='#e74c3c' if is_best else '#2c3e50',
+                   zorder=5 if is_best else 4,
+                   linewidths=0)
+
+    ax.set_ylabel('Depth (µm)', fontsize=5, labelpad=2)
+    ax.tick_params(axis='y', labelsize=4, length=2, pad=1)
+    ax.set_ylim(ch_pos[:, 1].min() - 20, ch_pos[:, 1].max() + 20)
+    ax.set_xlim(ch_pos[:, 0].min() - 60, ch_pos[:, 0].max() + 60)
 
 
 def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, bc_labels):
@@ -216,8 +282,12 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
         # Ensure best_ch appears first in the 6-channel list
         best_6 = np.array([best_ch] + [c for c in best_6 if c != best_ch][:5])
 
-        gs_wf = GridSpecFromSubplotSpec(3, 2, subplot_spec=gs[0, 0],
+        # Split gs[0,0]: waveforms (left) + probe schematic (right)
+        gs_wf_probe = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[0, 0],
+                                              width_ratios=[5, 1], wspace=0.08)
+        gs_wf = GridSpecFromSubplotSpec(3, 2, subplot_spec=gs_wf_probe[0, 0],
                                         hspace=0.05, wspace=0.05)
+        ax_probe = fig.add_subplot(gs_wf_probe[0, 1])
         for i, ch_idx in enumerate(best_6):
             ax = fig.add_subplot(gs_wf[i // 2, i % 2])
             wf = unit_tmpl[:, ch_idx]
@@ -297,6 +367,8 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                 else:
                     ax.text(0.97, 0.96, wf_source, transform=ax.transAxes,
                             fontsize=5, va='top', ha='right', color='#7f8c8d')
+
+        _plot_probe_schematic(ax_probe, best_6, best_ch, ext_data)
     else:
         ax = fig.add_subplot(gs[0, 0])
         ax.text(0.5, 0.5, 'Waveforms not available', ha='center', va='center',
@@ -320,7 +392,7 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             ax_isi.bar(sym_centers, sym_vals, width=bw * 0.9,
                        color='#3498db', alpha=0.75, edgecolor='none')
             ax_isi.axvspan(-1.5, 1.5, color='#e74c3c', alpha=0.15, label='±1.5 ms')
-            ax_isi.axvline(0, color='k', lw=0.5, alpha=0.4)
+
             ax_isi.set_xlim(-50, 50)
         except Exception as e:
             ax_isi.text(0.5, 0.5, f'ISI error:\n{e}', ha='center', va='center',
@@ -333,8 +405,12 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     ax_isi.set_ylabel('Count', fontsize=9)
     ax_isi.tick_params(labelsize=8)
 
-    # ── Amplitude over time ──────────────────────────────────────────
-    ax_amp = fig.add_subplot(gs[1, 0])
+    # ── Amplitude over time + distribution histogram ─────────────────
+    gs_amp = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[1, 0],
+                                     width_ratios=[3, 1], wspace=0.03)
+    ax_amp      = fig.add_subplot(gs_amp[0, 0])
+    ax_amp_hist = fig.add_subplot(gs_amp[0, 1], sharey=ax_amp)
+
     if unit_idx in ext_data['unit_times']:
         u_times = ext_data['unit_times'][unit_idx]
         u_amps  = ext_data['unit_amps'][unit_idx]
@@ -352,12 +428,23 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             ax_amp.plot(bx, by, color='#e74c3c', lw=1.5, zorder=5)
         ax_amp.set_xlabel('Time (min)', fontsize=9)
         ax_amp.set_ylabel('Amplitude (μV)', fontsize=9)
+        # Flipped amplitude histogram (bars grow leftward toward the scatter)
+        ax_amp_hist.hist(u_amps, bins=40, orientation='horizontal',
+                         color='#2c3e50', alpha=0.7, edgecolor='none')
+        ax_amp_hist.invert_xaxis()
+        ax_amp_hist.set_xlabel('N', fontsize=7)
+        ax_amp_hist.set_yticks([])
+        ax_amp_hist.tick_params(labelsize=6)
+        for sp in ['top', 'left', 'right']:
+            ax_amp_hist.spines[sp].set_visible(False)
     elif ext_data['amp_error']:
         ax_amp.text(0.5, 0.5, f'Error:\n{ext_data["amp_error"]}', ha='center', va='center',
                     transform=ax_amp.transAxes, fontsize=7)
+        ax_amp_hist.set_visible(False)
     else:
         ax_amp.text(0.5, 0.5, 'Amplitudes not available', ha='center', va='center',
                     transform=ax_amp.transAxes)
+        ax_amp_hist.set_visible(False)
     ax_amp.set_title('Amplitude over time', fontsize=10)
     ax_amp.tick_params(labelsize=8)
 
@@ -389,7 +476,7 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
 
     cell_type_rows = [
         # (label, value_string)
-        ('Trough-to-peak (ms)', bc_val('waveformDuration_peakTrough', '.3f', 1000.0 / fs)
+        ('Trough-to-peak (ms)', bc_val('waveformDuration_peakTrough', '.3f', 0.001)
                                 if bc_row is not None
                                 else val(tm, 'peak_to_trough_duration', '.3f', 1000.0)),
         ('Half-width (ms)',     bc_val('mainTrough_width', '.3f', 1000.0 / fs)
@@ -407,25 +494,39 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
         ('presence_ratio',       'Presence ratio',     qm, '.3f', 1.0),
     ]
 
+    def _row(ax, y, label, vstr):
+        ax.text(0.03, y, label, fontsize=8.5, transform=ax.transAxes, va='top')
+        ax.text(0.85, y, vstr, fontsize=8.5, transform=ax.transAxes,
+                va='top', ha='right', fontweight='bold', color='#2980b9')
+
+    ROW = 0.09   # vertical step between rows
+    HEAD = 0.09  # step after a section header
+
     y = 0.97
     ax_m.text(0.0, y, '── Waveform ──', fontsize=9, fontweight='bold',
               transform=ax_m.transAxes, va='top', color='#2c3e50')
-    y -= 0.12
+    y -= HEAD
     for label, value_str in cell_type_rows:
-        ax_m.text(0.03, y, label, fontsize=8.5, transform=ax_m.transAxes, va='top')
-        ax_m.text(0.85, y, value_str, fontsize=8.5, transform=ax_m.transAxes,
-                  va='top', ha='right', fontweight='bold', color='#2980b9')
-        y -= 0.11
+        _row(ax_m, y, label, value_str)
+        y -= ROW
 
-    y -= 0.04
+    y -= 0.03
     ax_m.text(0.0, y, '── Quality ──', fontsize=9, fontweight='bold',
               transform=ax_m.transAxes, va='top', color='#2c3e50')
-    y -= 0.12
+    y -= HEAD
     for col, label, df, fmt, mult in quality_rows:
-        ax_m.text(0.03, y, label, fontsize=8.5, transform=ax_m.transAxes, va='top')
-        ax_m.text(0.85, y, val(df, col, fmt, mult), fontsize=8.5, transform=ax_m.transAxes,
-                  va='top', ha='right', fontweight='bold', color='#2980b9')
-        y -= 0.11
+        _row(ax_m, y, label, val(df, col, fmt, mult))
+        y -= ROW
+
+    y -= 0.03
+    ax_m.text(0.0, y, '── Burstiness ──', fontsize=9, fontweight='bold',
+              transform=ax_m.transAxes, va='top', color='#2c3e50')
+    y -= HEAD
+    cv_v  = ext_data['unit_cv'].get(unit_idx)
+    p80_v = ext_data['unit_pct80'].get(unit_idx)
+    _row(ax_m, y, 'ISI CV',         f'{cv_v:.2f}'  if cv_v  is not None else 'N/A')
+    y -= ROW
+    _row(ax_m, y, 'ISI < 80 ms (%)', f'{p80_v:.1f}' if p80_v is not None else 'N/A')
 
     return fig
 
@@ -545,8 +646,11 @@ def generate_report(run, prb, config):
     sorted_ids = _sort_units(unit_ids, ur_labels, ur_conf)
 
     print(f"  [{_ts()}] [Report] Pre-loading extensions...")
-    bc_dir = ks4_dir(run, prb, config) / 'bombcell'
-    ext_data = preload_ext_data(analyzer, bc_dir=bc_dir if bc_dir.exists() else None)
+    bc_dir  = ks4_dir(run, prb, config) / 'bombcell'
+    this_ks = ks4_dir(run, prb, config)
+    ext_data = preload_ext_data(analyzer,
+                                bc_dir=bc_dir if bc_dir.exists() else None,
+                                ks_dir=this_ks)
 
     n_failed = 0
     with PdfPages(out_path) as pdf:
@@ -571,6 +675,15 @@ def generate_report(run, prb, config):
     if n_failed:
         msg += f", {n_failed} failed"
     print(msg + ")")
+
+    copy_dir = config.get('report_copy_dir')
+    if copy_dir:
+        import shutil
+        dest_dir = Path(copy_dir)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / out_path.name
+        shutil.copy2(out_path, dest)
+        print(f"  [Report] Copied to: {dest}")
 
 
 def process_run(run, config):
