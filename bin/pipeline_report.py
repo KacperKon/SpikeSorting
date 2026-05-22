@@ -262,121 +262,155 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     gs = GridSpec(2, 2, figure=fig, hspace=0.45, wspace=0.35,
                   top=0.92, bottom=0.08, left=0.07, right=0.97)
 
-    # ── Waveforms 3×2 ────────────────────────────────────────────────
-    # Prefer Bombcell waveforms (n_units, n_channels, n_samples); fall back to SI templates
-    bc_wf_all = ext_data['bc_wf']
-    bc_ch_all = ext_data['bc_ch']
-    if bc_wf_all is not None and unit_idx < len(bc_wf_all):
-        unit_tmpl = bc_wf_all[unit_idx].T          # → (n_samples, n_channels)
-        best_ch   = int(bc_ch_all[unit_idx])
-    else:
-        unit_tmpl = ext_data['templates'][unit_idx] if ext_data['templates'] is not None else None
-        best_ch   = None
+    # ── Waveforms: SpikeInterface (left) | Bombcell (middle) | probe (right) ──
+    from matplotlib.lines import Line2D
+    from scipy.signal import find_peaks as _sp_fp
 
-    if unit_tmpl is not None:
-        n_samples = unit_tmpl.shape[0]
-        t_ms = np.arange(n_samples) / fs * 1000
-        best_6 = np.argsort(np.ptp(unit_tmpl, axis=0))[::-1][:6]
-        if best_ch is None:
-            best_ch = best_6[0]
-        # Ensure best_ch appears first in the 6-channel list
-        best_6 = np.array([best_ch] + [c for c in best_6 if c != best_ch][:5])
+    _si_all = ext_data['templates']
+    _bc_all = ext_data['bc_wf']
+    _bc_ch  = ext_data['bc_ch']
 
-        # Split gs[0,0]: waveforms (left) + probe schematic (right)
-        gs_wf_probe = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[0, 0],
-                                              width_ratios=[5, 1], wspace=0.08)
-        gs_wf = GridSpecFromSubplotSpec(3, 2, subplot_spec=gs_wf_probe[0, 0],
-                                        hspace=0.05, wspace=0.05)
-        ax_probe = fig.add_subplot(gs_wf_probe[0, 1])
-        for i, ch_idx in enumerate(best_6):
-            ax = fig.add_subplot(gs_wf[i // 2, i % 2])
-            wf = unit_tmpl[:, ch_idx]
-            ax.plot(t_ms, wf, color='#2c3e50', lw=0.9)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            for sp in ax.spines.values():
-                sp.set_visible(False)
+    si_unit = (_si_all[unit_idx]
+               if _si_all is not None and unit_idx < len(_si_all) else None)
+    bc_unit = (_bc_all[unit_idx].T          # (n_ch, n_s) → (n_s, n_ch)
+               if _bc_all is not None and unit_idx < len(_bc_all) else None)
 
-            if ch_idx == best_ch:
-                from matplotlib.lines import Line2D
-                wf_source = 'Bombcell' if bc_wf_all is not None else 'SpikeInterface'
+    if si_unit is not None or bc_unit is not None:
+        # Layout: [SI | BC | probe], with a shared legend row below the waveforms
+        gs_wp = GridSpecFromSubplotSpec(1, 2, subplot_spec=gs[0, 0],
+                                        width_ratios=[6, 1], wspace=0.06)
+        gs_wf = GridSpecFromSubplotSpec(4, 2, subplot_spec=gs_wp[0, 0],
+                                        height_ratios=[1, 1, 1, 0.32],
+                                        hspace=0.05, wspace=0.10)
+        ax_probe = fig.add_subplot(gs_wp[0, 1])
 
-                # ── Scale bar (always shown) ──────────────────────────
-                t_range   = t_ms[-1] - t_ms[0]
-                a_range   = np.ptp(wf)
-                bar_t     = 0.5
-                bar_a     = next((v for v in [5,10,20,50,100,200,500]
-                                  if v >= a_range * 0.2), 500)
-                x0 = t_ms[0] + t_range * 0.05
-                y0 = wf.min() - a_range * 0.08
-                ax.hlines(y0, x0, x0 + bar_t, colors='k', lw=1.5, zorder=6, clip_on=False)
-                ax.vlines(x0, y0, y0 + bar_a, colors='k', lw=1.5, zorder=6, clip_on=False)
-                ax.text(x0 + bar_t / 2, y0 - a_range * 0.10,
-                        f'{bar_t} ms', fontsize=5, ha='center', va='top', clip_on=False)
-                ax.text(x0 - t_range * 0.03, y0 + bar_a / 2,
-                        f'{bar_a} μV', fontsize=5, ha='right', va='center', clip_on=False)
+        # ── shared helpers ────────────────────────────────────────────
+        def _find_tr_pk(wf):
+            ml = int(np.nanargmax(np.abs(wf)))
+            if wf[ml] > 0:
+                pk = ml; tr = int(np.nanargmin(wf[pk:])) + pk
+            else:
+                tr = ml; pk = int(np.nanargmax(wf[tr:])) + tr
+            return tr, pk
 
-                # ── Annotations: Bombcell positions only ─────────────
-                bc_peak   = ext_data['bc_peak_loc'].get(uid)
-                bc_trough = ext_data['bc_trough_loc'].get(uid)
-                if bc_peak is not None and bc_trough is not None:
-                    # Re-derive positions from the plotted waveform using Bombcell's
-                    # own algorithm — the stored indices are from KS templates, which
-                    # can be shifted a few samples relative to the raw waveform.
-                    _max_loc = int(np.nanargmax(np.abs(wf)))
-                    if wf[_max_loc] > 0:
-                        peak_i   = _max_loc
-                        trough_i = int(np.nanargmin(wf[peak_i:])) + peak_i
+        def _annotate(ax, wf, t_ms, tr, pk):
+            t_val = wf[tr]
+            ax.plot(t_ms[tr], t_val,   'o', color='#e74c3c', ms=5, zorder=5)
+            ax.plot(t_ms[pk], wf[pk],  'o', color='#3498db', ms=5, zorder=5)
+            half = t_val / 2.0
+            cx = np.where(np.diff((wf <= half).astype(int)))[0]
+            if len(cx) >= 2:
+                ax.hlines(half, t_ms[cx[0]], t_ms[cx[1]],
+                          colors='#27ae60', lw=2, zorder=5)
+            arrow_y = t_val * 1.20
+            ax.annotate('', xy=(t_ms[pk], arrow_y), xytext=(t_ms[tr], arrow_y),
+                        arrowprops=dict(arrowstyle='<->', color='#8e44ad', lw=1.2))
+            gap = abs(pk - tr)
+            if gap > 4:
+                lo, hi = min(tr, pk), max(tr, pk)
+                mid = (lo + hi) // 2
+                sl = slice(max(0, mid - gap // 4), mid + gap // 4)
+                if len(t_ms[sl]) > 2:
+                    m, b = np.polyfit(t_ms[sl], wf[sl], 1)
+                    x_ext = np.array([t_ms[lo], t_ms[hi]])
+                    ax.plot(x_ext, m * x_ext + b, '--', color='#e67e22',
+                            lw=1.2, alpha=0.85, zorder=4)
+
+        def _scale_bar(ax, wf, t_ms):
+            t_rng = t_ms[-1] - t_ms[0]; a_rng = np.ptp(wf)
+            bar_a = next((v for v in [5, 10, 20, 50, 100, 200, 500]
+                          if v >= a_rng * 0.2), 500)
+            x0 = t_ms[0] + t_rng * 0.05
+            y0 = wf.min() - a_rng * 0.14
+            ax.hlines(y0, x0, x0 + 0.5, colors='k', lw=1.5, zorder=6, clip_on=False)
+            ax.vlines(x0, y0, y0 + bar_a, colors='k', lw=1.5, zorder=6, clip_on=False)
+            ax.text(x0 + 0.25, y0 - a_rng * 0.10, '0.5 ms',
+                    fontsize=5, ha='center', va='top', clip_on=False)
+            ax.text(x0 - t_rng * 0.03, y0 + bar_a / 2, f'{bar_a} μV',
+                    fontsize=5, ha='right', va='center', clip_on=False)
+
+        def _bare_ax(ax, wf, t_ms, color):
+            ax.plot(t_ms, wf, color=color, lw=0.9)
+            ax.set_xticks([]); ax.set_yticks([])
+            for sp in ax.spines.values(): sp.set_visible(False)
+
+        # ── SpikeInterface waveforms (col 0) ─────────────────────────
+        si_chs = np.array([], dtype=int)
+        if si_unit is not None:
+            si_t = np.arange(si_unit.shape[0]) / fs * 1000
+            si_chs = np.argsort(np.ptp(si_unit, axis=0))[::-1][:3]
+            for row, ch in enumerate(si_chs):
+                ax = fig.add_subplot(gs_wf[row, 0])
+                wf = si_unit[:, ch]
+                _bare_ax(ax, wf, si_t, '#2980b9')
+                if row == 0:
+                    ax.set_title('SpikeInterface', fontsize=8, pad=2, color='#2980b9')
+                    si_tr, si_pk = _find_tr_pk(wf)
+                    _annotate(ax, wf, si_t, si_tr, si_pk)
+                    _scale_bar(ax, wf, si_t)
+
+        # ── Bombcell waveforms (col 1) ────────────────────────────────
+        bc_chs = np.array([], dtype=int)
+        bc_best_ch = None
+        if bc_unit is not None:
+            bc_t = np.arange(bc_unit.shape[0]) / fs * 1000
+            bc_best_ch = (int(_bc_ch[unit_idx]) if _bc_ch is not None
+                          else int(np.argmax(np.ptp(bc_unit, axis=0))))
+            bc_top = np.argsort(np.ptp(bc_unit, axis=0))[::-1]
+            bc_chs = np.array([bc_best_ch]
+                               + [c for c in bc_top if c != bc_best_ch][:2])
+            bc_pk_s = ext_data['bc_peak_loc'].get(uid)
+            bc_tr_s = ext_data['bc_trough_loc'].get(uid)
+            for row, ch in enumerate(bc_chs):
+                ax = fig.add_subplot(gs_wf[row, 1])
+                wf = bc_unit[:, ch]
+                _bare_ax(ax, wf, bc_t, '#c0392b')
+                if row == 0:
+                    ax.set_title('Bombcell', fontsize=8, pad=2, color='#c0392b')
+                    n = len(wf)
+                    if (bc_pk_s is not None and bc_tr_s is not None
+                            and 0 <= int(bc_tr_s) < n and 0 <= int(bc_pk_s) < n):
+                        bc_tr, bc_pk = int(bc_tr_s), int(bc_pk_s)
                     else:
-                        trough_i = _max_loc
-                        peak_i   = int(np.nanargmax(wf[trough_i:])) + trough_i
-                    t_val    = wf[trough_i]
-                    p_val    = wf[peak_i]
+                        bc_tr, bc_pk = _find_tr_pk(wf)
+                    _annotate(ax, wf, bc_t, bc_tr, bc_pk)
+                    _scale_bar(ax, wf, bc_t)
+                    # Secondary peaks/troughs detected by scipy (BC only)
+                    for p in _sp_fp(wf)[0]:
+                        if abs(p - bc_pk) > 2:
+                            ax.plot(bc_t[p], wf[p], 'x', color='#3498db',
+                                    ms=6, mew=1.5, zorder=4)
+                    for t in _sp_fp(-wf)[0]:
+                        if abs(t - bc_tr) > 2:
+                            ax.plot(bc_t[t], wf[t], 'x', color='#e74c3c',
+                                    ms=6, mew=1.5, zorder=4)
 
-                    ax.plot(t_ms[trough_i], t_val, 'o', color='#e74c3c', ms=5, zorder=5)
-                    ax.plot(t_ms[peak_i],   p_val, 'o', color='#3498db', ms=5, zorder=5)
+        # ── Shared legend (row 3, both columns) ──────────────────────
+        ax_leg = fig.add_subplot(gs_wf[3, :])
+        ax_leg.axis('off')
+        _le = [
+            Line2D([0],[0], marker='o', color='w', markerfacecolor='#e74c3c',
+                   ms=5, label='trough'),
+            Line2D([0],[0], marker='o', color='w', markerfacecolor='#3498db',
+                   ms=5, label='peak'),
+            Line2D([0],[0], color='#27ae60', lw=2,   label='½-width'),
+            Line2D([0],[0], color='#8e44ad', lw=1.2, label='trough→peak'),
+            Line2D([0],[0], color='#e67e22', lw=1, ls='--', label='recovery slope'),
+            Line2D([0],[0], marker='x', color='#e74c3c', ms=5, mew=1.5,
+                   linestyle='none', label='2° trough (BC)'),
+            Line2D([0],[0], marker='x', color='#3498db', ms=5, mew=1.5,
+                   linestyle='none', label='2° peak (BC)'),
+        ]
+        ax_leg.legend(handles=_le, loc='center', fontsize=6.5, ncol=4,
+                      framealpha=0, handlelength=1.5, borderpad=0.2,
+                      columnspacing=0.8, handletextpad=0.4)
 
-                    # Half-width bar at half trough depth
-                    half = t_val / 2.0
-                    crossings = np.where(np.diff((wf <= half).astype(int)))[0]
-                    if len(crossings) >= 2:
-                        ax.hlines(half, t_ms[crossings[0]], t_ms[crossings[1]],
-                                  colors='#27ae60', lw=2, zorder=5)
+        # ── Probe schematic ───────────────────────────────────────────
+        all_chs = np.unique(np.concatenate([si_chs, bc_chs]).astype(int))
+        probe_best = bc_best_ch if bc_best_ch is not None else (
+            int(si_chs[0]) if len(si_chs) else 0)
+        _plot_probe_schematic(ax_probe, all_chs, probe_best, ext_data)
 
-                    # Trough-to-peak arrow
-                    arrow_y = t_val * 1.20
-                    ax.annotate('', xy=(t_ms[peak_i], arrow_y),
-                                xytext=(t_ms[trough_i], arrow_y),
-                                arrowprops=dict(arrowstyle='<->', color='#8e44ad', lw=1.2))
-
-                    # Recovery slope tangent
-                    gap = abs(peak_i - trough_i)
-                    if gap > 10:
-                        lo, hi = min(trough_i, peak_i), max(trough_i, peak_i)
-                        mid = (lo + hi) // 2
-                        sl  = slice(max(0, mid - gap // 4), mid + gap // 4)
-                        if len(t_ms[sl]) > 2:
-                            m, b = np.polyfit(t_ms[sl], wf[sl], 1)
-                            x_ext = np.array([t_ms[lo], t_ms[hi]])
-                            ax.plot(x_ext, m * x_ext + b, '--', color='#e67e22',
-                                    lw=1.2, alpha=0.85, zorder=4)
-
-                    legend_elems = [
-                        Line2D([0],[0], marker='o', color='w', markerfacecolor='#e74c3c', ms=4, label='trough'),
-                        Line2D([0],[0], marker='o', color='w', markerfacecolor='#3498db', ms=4, label='peak'),
-                        Line2D([0],[0], color='#27ae60', lw=1.5, label='½-width'),
-                        Line2D([0],[0], color='#8e44ad', lw=1.2, label='trough→peak'),
-                        Line2D([0],[0], color='#e67e22', lw=1, ls='--', label='recovery'),
-                    ]
-                    ax.legend(handles=legend_elems, loc='upper right', fontsize=7,
-                              framealpha=0.75, handlelength=1.4, borderpad=0.4,
-                              labelspacing=0.2, handletextpad=0.5,
-                              title=wf_source, title_fontsize=7)
-                else:
-                    ax.text(0.97, 0.96, wf_source, transform=ax.transAxes,
-                            fontsize=5, va='top', ha='right', color='#7f8c8d')
-
-        _plot_probe_schematic(ax_probe, best_6, best_ch, ext_data)
     else:
         ax = fig.add_subplot(gs[0, 0])
         ax.text(0.5, 0.5, 'Waveforms not available', ha='center', va='center',
@@ -482,17 +516,14 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
         return f'{v * mult:{fmt}}'
 
     cell_type_rows = [
-        # (label, value_string)
-        ('Trough-to-peak (ms)', bc_val('waveformDuration_peakTrough', '.3f', 0.001)
-                                if bc_row is not None
-                                else val(tm, 'peak_to_trough_duration', '.3f', 1000.0)),
-        ('Half-width (ms)',     bc_val('mainTrough_width', '.3f', 1000.0 / fs)
-                                if bc_row is not None
-                                else val(tm, 'trough_half_width', '.3f', 1000.0)),
-        ('Peak/trough ratio',   bc_val('mainPeakToTroughRatio', '.3f')
-                                if bc_row is not None
-                                else val(tm, 'peak_after_to_trough_ratio', '.3f')),
-        ('Recovery slope',      val(tm, 'recovery_slope', '.4f')),
+        # (label, si_value, bc_value)
+        ('Trough-to-peak (ms)', val(tm, 'peak_to_trough_duration', '.3f', 1000.0),
+                                bc_val('waveformDuration_peakTrough', '.3f', 0.001)),
+        ('Half-width (ms)',     val(tm, 'trough_half_width', '.3f', 1000.0),
+                                bc_val('mainTrough_width', '.3f', 1000.0 / fs)),
+        ('Peak/trough ratio',   val(tm, 'peak_after_to_trough_ratio', '.3f'),
+                                bc_val('mainPeakToTroughRatio', '.3f')),
+        ('Recovery slope',      val(tm, 'recovery_slope', '.4f'), 'N/A'),
     ]
     quality_rows = [
         ('firing_rate',          'Firing rate (Hz)',   qm, '.2f', 1.0),
@@ -501,10 +532,16 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
         ('presence_ratio',       'Presence ratio',     qm, '.3f', 1.0),
     ]
 
-    def _row(ax, y, label, vstr):
+    def _row(ax, y, label, vstr, vstr2=None):
         ax.text(0.03, y, label, fontsize=8.5, transform=ax.transAxes, va='top')
-        ax.text(0.85, y, vstr, fontsize=8.5, transform=ax.transAxes,
-                va='top', ha='right', fontweight='bold', color='#2980b9')
+        if vstr2 is None:
+            ax.text(0.97, y, vstr, fontsize=8.5, transform=ax.transAxes,
+                    va='top', ha='right', fontweight='bold', color='#2980b9')
+        else:
+            ax.text(0.72, y, vstr,  fontsize=8.5, transform=ax.transAxes,
+                    va='top', ha='right', fontweight='bold', color='#2980b9')
+            ax.text(0.97, y, vstr2, fontsize=8.5, transform=ax.transAxes,
+                    va='top', ha='right', fontweight='bold', color='#c0392b')
 
     ROW = 0.09   # vertical step between rows
     HEAD = 0.09  # step after a section header
@@ -512,9 +549,13 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     y = 0.97
     ax_m.text(0.0, y, '── Waveform ──', fontsize=9, fontweight='bold',
               transform=ax_m.transAxes, va='top', color='#2c3e50')
+    ax_m.text(0.72, y, 'SI',  fontsize=7.5, transform=ax_m.transAxes,
+              va='top', ha='right', color='#2980b9', fontstyle='italic')
+    ax_m.text(0.97, y, 'BC',  fontsize=7.5, transform=ax_m.transAxes,
+              va='top', ha='right', color='#c0392b', fontstyle='italic')
     y -= HEAD
-    for label, value_str in cell_type_rows:
-        _row(ax_m, y, label, value_str)
+    for label, si_str, bc_str in cell_type_rows:
+        _row(ax_m, y, label, si_str, bc_str)
         y -= ROW
 
     y -= 0.03
