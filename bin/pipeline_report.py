@@ -264,7 +264,7 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
 
     # ── Waveforms: SpikeInterface (left) | Bombcell (middle) | probe (right) ──
     from matplotlib.lines import Line2D
-    from scipy.signal import find_peaks as _sp_fp
+
 
     _si_all = ext_data['templates']
     _bc_all = ext_data['bc_wf']
@@ -375,15 +375,6 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
                         bc_tr, bc_pk = _find_tr_pk(wf)
                     _annotate(ax, wf, bc_t, bc_tr, bc_pk)
                     _scale_bar(ax, wf, bc_t)
-                    # Secondary peaks/troughs detected by scipy (BC only)
-                    for p in _sp_fp(wf)[0]:
-                        if abs(p - bc_pk) > 2:
-                            ax.plot(bc_t[p], wf[p], 'x', color='#3498db',
-                                    ms=6, mew=1.5, zorder=4)
-                    for t in _sp_fp(-wf)[0]:
-                        if abs(t - bc_tr) > 2:
-                            ax.plot(bc_t[t], wf[t], 'x', color='#e74c3c',
-                                    ms=6, mew=1.5, zorder=4)
 
         # ── Shared legend (row 3, both columns) ──────────────────────
         ax_leg = fig.add_subplot(gs_wf[3, :])
@@ -396,10 +387,6 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             Line2D([0],[0], color='#27ae60', lw=2,   label='½-width'),
             Line2D([0],[0], color='#8e44ad', lw=1.2, label='trough→peak'),
             Line2D([0],[0], color='#e67e22', lw=1, ls='--', label='recovery slope'),
-            Line2D([0],[0], marker='x', color='#e74c3c', ms=5, mew=1.5,
-                   linestyle='none', label='2° trough (BC)'),
-            Line2D([0],[0], marker='x', color='#3498db', ms=5, mew=1.5,
-                   linestyle='none', label='2° peak (BC)'),
         ]
         ax_leg.legend(handles=_le, loc='center', fontsize=6.5, ncol=4,
                       framealpha=0, handlelength=1.5, borderpad=0.2,
