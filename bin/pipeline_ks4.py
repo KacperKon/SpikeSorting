@@ -168,6 +168,13 @@ def load_or_run_kilosort4(run, prb, config):
     log_exists = (output_dir / 'spikeinterface_log.json').exists()
     if not config.get('force_rerun_kilosort') and log_exists:
         print(f"  [KS4] Output exists for probe {prb}, loading.")
+        # Load sorting from the SortingAnalyzer when it exists, not from the raw
+        # sorter folder. Downstream tools (Bombcell) write TSV files into
+        # sorter_output/ with float cluster IDs, which cause SI to fail on reload.
+        # The analyzer stores the sorting with correct integer IDs.
+        ana_dir = analyzer_dir(run, prb, config)
+        if ana_dir.exists():
+            return si.load_sorting_analyzer(ana_dir).sorting, recording
         return si.load(output_dir), recording
 
     # Remove an incomplete folder (exists but no log file) so KS4 can start fresh.
