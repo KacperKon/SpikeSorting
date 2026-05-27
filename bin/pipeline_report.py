@@ -124,9 +124,9 @@ def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
         'amp_error':  None,
         'unit_cv':   {},        # unit_idx → CV of ISIs
         'unit_pct80':{},        # unit_idx → % ISIs < 80 ms
-        # Bombcell
-        'bc_wf':  None,  # (n_units, n_channels, n_samples)
-        'bc_ch':  None,  # (n_units,) best channel index per unit
+        # Bombcell / KS4 templates
+        'ks_templates': None,  # (n_units, n_time, n_channels) KS4 templates, un-whitened
+        'bc_ch':  None,  # (n_units,) best channel index per unit (from Bombcell)
         'bc_qm':  {},    # uid → row Series from _bc_qMetrics.csv
         # Probe geometry
         'ch_pos':   None,       # (n_ch, 2) channel x/y positions in µm
@@ -142,14 +142,24 @@ def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
 
     if ks_dir is not None:
         try:
-            pos_path   = Path(ks_dir) / 'sorter_output' / 'channel_positions.npy'
-            shank_path = Path(ks_dir) / 'sorter_output' / 'channel_shanks.npy'
+            so = Path(ks_dir) / 'sorter_output'
+            pos_path   = so / 'channel_positions.npy'
+            shank_path = so / 'channel_shanks.npy'
             if pos_path.exists():
                 data['ch_pos'] = np.load(pos_path)
             if shank_path.exists():
                 data['ch_shank'] = np.load(shank_path)
+            # KS4 templates: un-whiten so amplitudes are in µV and indices match
+            # Bombcell's stored peak_loc_for_duration / trough_loc_for_duration.
+            tmpl_path = so / 'templates.npy'
+            winv_path = so / 'whitening_mat_inv.npy'
+            if tmpl_path.exists() and winv_path.exists():
+                tmpl = np.load(tmpl_path)          # (n_units, n_time, n_channels)
+                winv = np.load(winv_path)          # (n_channels, n_channels)
+                data['ks_templates'] = np.einsum('ijk,kl->ijl', tmpl, winv)
+                print(f"  [Report] KS4 templates loaded and un-whitened: {data['ks_templates'].shape}")
         except Exception as e:
-            print(f"  [Report] Warning: failed to load channel geometry: {e}")
+            print(f"  [Report] Warning: failed to load KS4 data: {e}")
 
     if bc_dir is not None:
         try:
@@ -157,9 +167,7 @@ def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
             bc_qm_df = _pd.read_csv(Path(bc_dir) / 'templates._bc_qMetrics.csv', index_col=0)
             for _, row in bc_qm_df.iterrows():
                 data['bc_qm'][int(row['phy_clusterID'])] = row
-            data['bc_wf'] = np.load(Path(bc_dir) / 'templates._bc_rawWaveforms.npy')
             data['bc_ch'] = np.load(Path(bc_dir) / 'templates._bc_rawWaveformPeakChannels.npy').astype(int)
-            print(f"  [Report] Bombcell waveforms loaded: {data['bc_wf'].shape}")
             import pickle
             with open(Path(bc_dir) / 'for_GUI' / 'gui_data.pkl', 'rb') as _f:
                 _gui = pickle.load(_f)
@@ -277,14 +285,14 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
     from matplotlib.lines import Line2D
 
 
-    _si_all = ext_data['templates']
-    _bc_all = ext_data['bc_wf']
-    _bc_ch  = ext_data['bc_ch']
+    _si_all  = ext_data['templates']
+    _ks_all  = ext_data['ks_templates']   # KS4 templates (same waveforms Bombcell used)
+    _bc_ch   = ext_data['bc_ch']
 
     si_unit = (_si_all[unit_idx]
                if _si_all is not None and unit_idx < len(_si_all) else None)
-    bc_unit = (_bc_all[unit_idx].T          # (n_ch, n_s) → (n_s, n_ch)
-               if _bc_all is not None and unit_idx < len(_bc_all) else None)
+    bc_unit = (_ks_all[unit_idx]           # already (n_time, n_channels)
+               if _ks_all is not None and unit_idx < len(_ks_all) else None)
 
     if si_unit is not None or bc_unit is not None:
         # Layout: [SI | BC | probe], with a shared legend row below the waveforms
