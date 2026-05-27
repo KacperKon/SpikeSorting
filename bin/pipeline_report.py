@@ -118,21 +118,26 @@ def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
         'quality_metrics':  _get_ext(analyzer, 'quality_metrics'),
         'template_metrics': _get_ext(analyzer, 'template_metrics'),
         'isi_histograms':   _get_ext(analyzer, 'isi_histograms'),
+        'si_ch':      {},   # unit_id → best channel index (from SI templates extension)
         'unit_times': {},
         'unit_amps':  {},
         'amp_error':  None,
         'unit_cv':   {},        # unit_idx → CV of ISIs
         'unit_pct80':{},        # unit_idx → % ISIs < 80 ms
         # Bombcell
-        'bc_wf':         None,  # (n_units, n_channels, n_samples)
-        'bc_ch':         None,  # (n_units,) best channel index per unit
-        'bc_qm':         {},    # uid → row Series from _bc_qMetrics.csv
-        'bc_peak_loc':   {},    # uid → sample index of main peak (for duration)
-        'bc_trough_loc': {},    # uid → sample index of main trough (for duration)
+        'bc_wf':  None,  # (n_units, n_channels, n_samples)
+        'bc_ch':  None,  # (n_units,) best channel index per unit
+        'bc_qm':  {},    # uid → row Series from _bc_qMetrics.csv
         # Probe geometry
         'ch_pos':   None,       # (n_ch, 2) channel x/y positions in µm
         'ch_shank': None,       # (n_ch,) shank index per channel
     }
+
+    try:
+        extremum = si.get_template_extremum_channel(analyzer, peak_sign='both', mode='extremum')
+        data['si_ch'] = {int(uid): int(ch) for uid, ch in extremum.items()}
+    except Exception as e:
+        print(f"  [Report] Warning: failed to load SI extremum channels: {e}")
 
     if ks_dir is not None:
         try:
@@ -194,8 +199,8 @@ def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
     return data
 
 
-def _plot_probe_schematic(ax, ch_indices, best_ch, ext_data):
-    """Simplified probe schematic: shank outlines + highlighted channel positions."""
+def _plot_probe_schematic(ax, all_chs, si_best_ch, bc_best_ch, ext_data):
+    """Probe schematic: shank outlines, displayed channels (grey), SI best (blue ring), BC best (red dot)."""
     ax.set_title('Sites', fontsize=6, pad=2)
     ax.set_xticks([])
     for sp in ax.spines.values():
@@ -213,7 +218,6 @@ def _plot_probe_schematic(ax, ch_indices, best_ch, ext_data):
     n_ch      = len(ch_pos)
     shank_arr = ch_shank.astype(int) if ch_shank is not None else np.zeros(n_ch, dtype=int)
 
-    # Draw each shank as a thick vertical line
     for s in np.unique(shank_arr):
         mask     = shank_arr == s
         x_center = ch_pos[mask, 0].mean()
@@ -222,15 +226,21 @@ def _plot_probe_schematic(ax, ch_indices, best_ch, ext_data):
         ax.plot([x_center, x_center], [y_bot, y_top],
                 color='#bdc3c7', lw=4, solid_capstyle='round', zorder=1)
 
-    # Mark displayed channels
-    for ch in ch_indices:
-        x, y     = ch_pos[ch, 0], ch_pos[ch, 1]
-        is_best  = (ch == best_ch)
-        ax.scatter(x, y,
-                   s=40 if is_best else 15,
-                   color='#e74c3c' if is_best else '#2c3e50',
-                   zorder=5 if is_best else 4,
-                   linewidths=0)
+    # Grey dots for all displayed channels
+    for ch in all_chs:
+        if ch != si_best_ch and ch != bc_best_ch:
+            ax.scatter(ch_pos[ch, 0], ch_pos[ch, 1], s=12, color='#2c3e50',
+                       zorder=3, linewidths=0)
+
+    # SI best: blue open circle
+    if si_best_ch is not None and si_best_ch < len(ch_pos):
+        ax.scatter(ch_pos[si_best_ch, 0], ch_pos[si_best_ch, 1],
+                   s=50, facecolors='none', edgecolors='#2980b9', lw=1.5, zorder=5)
+
+    # BC best: red filled dot (on top; if same channel as SI, red fills the blue ring)
+    if bc_best_ch is not None and bc_best_ch < len(ch_pos):
+        ax.scatter(ch_pos[bc_best_ch, 0], ch_pos[bc_best_ch, 1],
+                   s=30, color='#c0392b', zorder=6, linewidths=0)
 
     ax.set_ylabel('Depth (µm)', fontsize=5, labelpad=2)
     ax.tick_params(axis='y', labelsize=4, length=2, pad=1)
@@ -334,17 +344,38 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             ax.set_xticks([]); ax.set_yticks([])
             for sp in ax.spines.values(): sp.set_visible(False)
 
+        def _adjacent_chs(best_ch, ch_pos, ch_shank, n_ch):
+            """Return [above_ch, best_ch, below_ch] by physical position on the same shank."""
+            if ch_pos is not None and best_ch < len(ch_pos):
+                best_sh = int(ch_shank[best_ch]) if ch_shank is not None else -1
+                mask = (ch_shank.astype(int) == best_sh) if ch_shank is not None \
+                       else np.ones(n_ch, dtype=bool)
+                idx_same = np.where(mask)[0]
+                order = np.argsort(ch_pos[idx_same, 1])[::-1]  # descending y → top first
+                sorted_chs = idx_same[order]
+                pos = int(np.where(sorted_chs == best_ch)[0][0])
+                above = int(sorted_chs[pos - 1]) if pos > 0 else best_ch
+                below = int(sorted_chs[pos + 1]) if pos + 1 < len(sorted_chs) else best_ch
+            else:
+                above = max(0, best_ch - 1)
+                below = min(n_ch - 1, best_ch + 1)
+            return [above, best_ch, below]
+
         # ── SpikeInterface waveforms (col 0) ─────────────────────────
         si_chs = np.array([], dtype=int)
         if si_unit is not None:
             si_t = np.arange(si_unit.shape[0]) / fs * 1000
-            si_chs = np.argsort(np.ptp(si_unit, axis=0))[::-1][:3]
+            # Best channel from SI's stored extremum (derived from templates on disk).
+            si_best = ext_data['si_ch'].get(uid, int(np.argmax(np.ptp(si_unit, axis=0))))
+            si_chs = np.array(_adjacent_chs(si_best, ext_data['ch_pos'],
+                                            ext_data['ch_shank'], si_unit.shape[1]))
             for row, ch in enumerate(si_chs):
                 ax = fig.add_subplot(gs_wf[row, 0])
                 wf = si_unit[:, ch]
                 _bare_ax(ax, wf, si_t, '#2980b9')
                 if row == 0:
                     ax.set_title('SpikeInterface', fontsize=8, pad=2, color='#2980b9')
+                if row == 1:
                     si_tr, si_pk = _find_tr_pk(wf)
                     _annotate(ax, wf, si_t, si_tr, si_pk)
                     _scale_bar(ax, wf, si_t)
@@ -356,16 +387,26 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             bc_t = np.arange(bc_unit.shape[0]) / fs * 1000
             bc_best_ch = (int(_bc_ch[unit_idx]) if _bc_ch is not None
                           else int(np.argmax(np.ptp(bc_unit, axis=0))))
-            bc_top = np.argsort(np.ptp(bc_unit, axis=0))[::-1]
-            bc_chs = np.array([bc_best_ch]
-                               + [c for c in bc_top if c != bc_best_ch][:2])
+            bc_chs = np.array(_adjacent_chs(bc_best_ch, ext_data['ch_pos'],
+                                            ext_data['ch_shank'], bc_unit.shape[1]))
             for row, ch in enumerate(bc_chs):
                 ax = fig.add_subplot(gs_wf[row, 1])
                 wf = bc_unit[:, ch]
                 _bare_ax(ax, wf, bc_t, '#c0392b')
                 if row == 0:
                     ax.set_title('Bombcell', fontsize=8, pad=2, color='#c0392b')
-                    bc_tr, bc_pk = _find_tr_pk(wf)
+                if row == 1:
+                    # Use Bombcell's stored trough/peak positions from gui_data.pkl.
+                    # If they appear slightly off from the visual waveform, that
+                    # discrepancy is itself informative (it's what BC computed).
+                    bc_pk_s = ext_data['bc_peak_loc'].get(uid)
+                    bc_tr_s = ext_data['bc_trough_loc'].get(uid)
+                    n = len(wf)
+                    if (bc_pk_s is not None and bc_tr_s is not None
+                            and 0 <= int(bc_tr_s) < n and 0 <= int(bc_pk_s) < n):
+                        bc_tr, bc_pk = int(bc_tr_s), int(bc_pk_s)
+                    else:
+                        bc_tr, bc_pk = _find_tr_pk(wf)
                     _annotate(ax, wf, bc_t, bc_tr, bc_pk)
                     _scale_bar(ax, wf, bc_t)
 
@@ -387,9 +428,8 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
 
         # ── Probe schematic ───────────────────────────────────────────
         all_chs = np.unique(np.concatenate([si_chs, bc_chs]).astype(int))
-        probe_best = bc_best_ch if bc_best_ch is not None else (
-            int(si_chs[0]) if len(si_chs) else 0)
-        _plot_probe_schematic(ax_probe, all_chs, probe_best, ext_data)
+        si_probe_best = int(si_chs[1]) if len(si_chs) >= 2 else None  # si_chs[1] is the middle (best) row
+        _plot_probe_schematic(ax_probe, all_chs, si_probe_best, bc_best_ch, ext_data)
 
     else:
         ax = fig.add_subplot(gs[0, 0])
