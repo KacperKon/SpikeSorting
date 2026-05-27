@@ -359,20 +359,13 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
             bc_top = np.argsort(np.ptp(bc_unit, axis=0))[::-1]
             bc_chs = np.array([bc_best_ch]
                                + [c for c in bc_top if c != bc_best_ch][:2])
-            bc_pk_s = ext_data['bc_peak_loc'].get(uid)
-            bc_tr_s = ext_data['bc_trough_loc'].get(uid)
             for row, ch in enumerate(bc_chs):
                 ax = fig.add_subplot(gs_wf[row, 1])
                 wf = bc_unit[:, ch]
                 _bare_ax(ax, wf, bc_t, '#c0392b')
                 if row == 0:
                     ax.set_title('Bombcell', fontsize=8, pad=2, color='#c0392b')
-                    n = len(wf)
-                    if (bc_pk_s is not None and bc_tr_s is not None
-                            and 0 <= int(bc_tr_s) < n and 0 <= int(bc_pk_s) < n):
-                        bc_tr, bc_pk = int(bc_tr_s), int(bc_pk_s)
-                    else:
-                        bc_tr, bc_pk = _find_tr_pk(wf)
+                    bc_tr, bc_pk = _find_tr_pk(wf)
                     _annotate(ax, wf, bc_t, bc_tr, bc_pk)
                     _scale_bar(ax, wf, bc_t)
 

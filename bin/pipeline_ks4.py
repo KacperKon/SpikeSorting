@@ -165,9 +165,15 @@ def load_or_run_kilosort4(run, prb, config):
     bin_path = catgt_bin_path(run, prb, config)
     recording = se.read_spikeglx(bin_path.parent, stream_id=f"imec{prb}.ap")
 
-    if not config.get('force_rerun_kilosort') and (output_dir / 'spikeinterface_log.json').exists():
+    log_exists = (output_dir / 'spikeinterface_log.json').exists()
+    if not config.get('force_rerun_kilosort') and log_exists:
         print(f"  [KS4] Output exists for probe {prb}, loading.")
         return si.load(output_dir), recording
+
+    # Remove an incomplete folder (exists but no log file) so KS4 can start fresh.
+    remove_existing = config.get('force_rerun_kilosort', False) or (output_dir.exists() and not log_exists)
+    if remove_existing and output_dir.exists() and not config.get('force_rerun_kilosort'):
+        print(f"  [KS4] Incomplete output found for probe {prb}, removing and re-sorting.")
 
     print(f"  [{_ts()}] [KS4] Running Kilosort 4 for probe {prb}...")
     sorting = ss.run_sorter(
@@ -175,7 +181,7 @@ def load_or_run_kilosort4(run, prb, config):
         recording=recording,
         folder=output_dir,
         verbose=True,
-        remove_existing_folder=config.get('force_rerun_kilosort', False),
+        remove_existing_folder=remove_existing,
         **config.get('kilosort4_params', {}),
     )
     return sorting, recording
