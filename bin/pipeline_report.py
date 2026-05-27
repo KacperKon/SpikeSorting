@@ -134,8 +134,9 @@ def preload_ext_data(analyzer, bc_dir=None, ks_dir=None):
     }
 
     try:
+        ch_ids = list(analyzer.channel_ids)
         extremum = si.get_template_extremum_channel(analyzer, peak_sign='both', mode='extremum')
-        data['si_ch'] = {int(uid): int(ch) for uid, ch in extremum.items()}
+        data['si_ch'] = {int(uid): ch_ids.index(ch) for uid, ch in extremum.items()}
     except Exception as e:
         print(f"  [Report] Warning: failed to load SI extremum channels: {e}")
 
