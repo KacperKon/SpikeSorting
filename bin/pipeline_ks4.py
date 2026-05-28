@@ -196,6 +196,29 @@ def load_or_run_kilosort4(run, prb, config):
     return sorting, recording
 
 
+def _run_si_extensions(analyzer, max_spikes_per_unit, config, prb):
+    """Run all SpikeInterface extensions with per-step logging."""
+    steps = [
+        ('random_spikes',       lambda: analyzer.compute('random_spikes', max_spikes_per_unit=max_spikes_per_unit)),
+        ('waveforms',           lambda: analyzer.compute('waveforms')),
+        ('noise_levels',        lambda: analyzer.compute('noise_levels')),
+        ('templates',           lambda: analyzer.compute('templates')),
+        ('spike_amplitudes',    lambda: analyzer.compute('spike_amplitudes')),
+        ('spike_locations',     lambda: analyzer.compute('spike_locations')),
+        ('unit_locations',      lambda: analyzer.compute('unit_locations')),
+        ('principal_components',lambda: analyzer.compute('principal_components')),
+        ('correlograms',        lambda: analyzer.compute('correlograms')),
+        ('isi_histograms',      lambda: analyzer.compute('isi_histograms')),
+        ('template_metrics',    lambda: analyzer.compute('template_metrics', include_multi_channel_metrics=True)),
+        ('quality_metrics',     lambda: analyzer.compute('quality_metrics',
+                                    metric_params={'drift': config.get('quality_metrics', {}).get('drift', {})})),
+    ]
+    for name, fn in steps:
+        print(f"  [{_ts()}] [SI prb{prb}] {name}...", flush=True)
+        fn()
+        print(f"  [{_ts()}] [SI prb{prb}] {name} done.", flush=True)
+
+
 def load_or_run_postprocessing(sorting, recording, run, prb, config):
     """
     Build a SpikeInterface SortingAnalyzer with waveforms and quality metrics.
@@ -227,23 +250,10 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
         analyzer = si.load_sorting_analyzer(ana_dir)
         analyzer.set_temporary_recording(recording)
-        analyzer.compute('random_spikes', max_spikes_per_unit=max_spikes_per_unit)
-        analyzer.compute([
-            'waveforms',
-            'noise_levels',
-            'templates',
-            'spike_amplitudes',
-            'spike_locations',
-            'unit_locations',
-            'principal_components',
-            'correlograms',
-            'isi_histograms'
-        ])
-        analyzer.compute('template_metrics', include_multi_channel_metrics=True)
-        analyzer.compute('quality_metrics', metric_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
+        _run_si_extensions(analyzer, max_spikes_per_unit, config, prb)
         return analyzer
 
-    print(f"  [{_ts()}] [Postprocessing] Computing waveforms and quality metrics for probe {prb}...")
+    print(f"  [{_ts()}] [Postprocessing] Starting SpikeInterface postprocessing for probe {prb}...")
     si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
 
     analyzer = si.create_sorting_analyzer(
@@ -253,20 +263,7 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         folder=ana_dir,
         overwrite=True,
     )
-    analyzer.compute('random_spikes', max_spikes_per_unit=max_spikes_per_unit)
-    analyzer.compute([
-        'waveforms',
-        'noise_levels',
-        'templates',
-        'spike_amplitudes',
-        'spike_locations',
-        'unit_locations',
-        'principal_components',
-        'correlograms',
-        'isi_histograms',
-    ])
-    analyzer.compute('template_metrics', include_multi_channel_metrics=True)
-    analyzer.compute('quality_metrics', metric_params={'drift': config.get('quality_metrics', {}).get('drift', {})})
+    _run_si_extensions(analyzer, max_spikes_per_unit, config, prb)
     return analyzer
 
 
