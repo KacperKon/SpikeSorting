@@ -20,6 +20,8 @@ Directory roots (configured in config.yaml):
 import sys
 import shutil
 import subprocess
+import multiprocessing
+import traceback
 import numpy as np
 from datetime import datetime
 import yaml
@@ -377,13 +379,47 @@ def process_run(run, config):
             clear_local_bin(run, prb, config)
 
 
+def _process_run_worker(run, config):
+    """Worker executed in a child process for one run."""
+    try:
+        process_run(run, config)
+    except Exception:
+        print(f"\n[ERROR] Run {run['name']} failed:")
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
+    multiprocessing.set_start_method('spawn', force=True)
     config_path = sys.argv[1] if len(sys.argv) > 1 else 'config.yaml'
     config = load_config(config_path)
     if config.get('copy_raw_to_local') and not config.get('catgt_local'):
         raise ValueError("copy_raw_to_local is true but catgt_local is not set in config.")
+
+    timeout_s = config.get('run_timeout_hours', 12) * 3600
+    failed = []
+
     for run in config['runs']:
-        process_run(run, config)
+        p = multiprocessing.Process(target=_process_run_worker, args=(run, config))
+        p.start()
+        p.join(timeout=timeout_s)
+
+        if p.is_alive():
+            print(f"\n[{_ts()}] TIMEOUT ({config.get('run_timeout_hours', 12)}h) — "
+                  f"killing {run['name']} and moving on.")
+            p.terminate()
+            p.join(timeout=10)
+            if p.is_alive():
+                p.kill()
+            failed.append((run['name'], 'timeout'))
+        elif p.exitcode != 0:
+            failed.append((run['name'], f'exit code {p.exitcode}'))
+
+    if failed:
+        print(f"\n[{_ts()}] Runs that did not complete:")
+        for name, reason in failed:
+            print(f"  {name}: {reason}")
+        sys.exit(1)
 
 
 if __name__ == '__main__':

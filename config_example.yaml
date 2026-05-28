@@ -120,6 +120,10 @@ max_spikes_per_unit: 500     # number of random spikes sampled per unit for wave
                              # reducing this (e.g. 200) speeds up extraction and PCA significantly
                              # for high-firing-rate recordings (e.g. brainstem); has no effect on
                              # spike sorting quality, only on metric precision
+run_timeout_hours: 12        # max wall-clock hours per recording before it is abandoned
+                             # and the pipeline moves on to the next run; increase for
+                             # very long recordings (rule of thumb: 2× expected sort time)
+
 force_rerun_catgt: false     # set true to redo CatGT even if output already exists
 force_rerun_kilosort: false  # set true to redo sorting and postprocessing from scratch
 force_rerun_metrics: false   # set true to recompute metrics without re-sorting
