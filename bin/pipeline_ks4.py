@@ -284,6 +284,7 @@ def export_spike_times_for_tprime(sorting, recording, run, prb, config):
         for uid in sorting.unit_ids
     ])) / fs
     np.save(out_path, all_spikes)
+    np.savetxt(out_path.with_suffix('.txt'), all_spikes, fmt='%.9f')
     print(f"  [TPrime prep] Spike times saved: {out_path}")
 
 
@@ -302,10 +303,11 @@ def run_tprime(run, config):
 
     for prb in run['probes']:
         fromstream = sync_root / f"catgt_{run_str}" / f"{run_str}_imec{prb}" / tprime_cfg['fromstream_file'].format(run=run_str, prb=prb)
-        spike_in  = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec.npy'
-        spike_out = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec_adj.npy'
+        spike_in_txt  = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec.txt'
+        spike_out_txt = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec_adj.txt'
+        spike_out_npy = spike_out_txt.with_suffix('.npy')
 
-        if spike_out.exists() and not config.get('force_rerun_tprime'):
+        if spike_out_npy.exists() and not config.get('force_rerun_tprime'):
             print(f"  [TPrime] Output exists for probe {prb}, skipping.")
             continue
 
@@ -314,10 +316,11 @@ def run_tprime(run, config):
             f"-syncperiod={tprime_cfg['sync_period']}",
             f"-tostream={tostream}",
             f"-fromstream=0,{fromstream}",
-            f"-events=0,{spike_in},{spike_out}",
+            f"-events=0,{spike_in_txt},{spike_out_txt}",
         ]
         print(f"  [{_ts()}] [TPrime] Running: {' '.join(str(c) for c in cmd)}")
         subprocess.check_call([str(c) for c in cmd])
+        np.save(spike_out_npy, np.loadtxt(spike_out_txt))
 
 
 def copy_bin_to_local(run, prb, config):
