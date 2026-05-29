@@ -288,6 +288,24 @@ def export_spike_times_for_tprime(sorting, recording, run, prb, config):
     print(f"  [TPrime prep] Spike times saved: {out_path}")
 
 
+def _resolve_sync_file(candidates, search_dir, label):
+    """
+    Return the first candidate path that exists on disk.
+    Raises FileNotFoundError with a helpful listing if none match.
+    """
+    for pattern in candidates:
+        p = search_dir / pattern
+        if p.exists():
+            return p
+    available = sorted(search_dir.glob('*.txt'))
+    available_str = '\n'.join(f"  {f.name}" for f in available) or '  (none)'
+    raise FileNotFoundError(
+        f"[TPrime] Could not find {label} in {search_dir}\n"
+        f"Tried:\n" + '\n'.join(f"  {p}" for p in candidates) + '\n'
+        f"Available .txt files:\n{available_str}"
+    )
+
+
 def run_tprime(run, config):
     """
     Run TPrime to remap spike times from each probe's clock to the NI (reference) clock.
@@ -299,10 +317,23 @@ def run_tprime(run, config):
     run_str = f"{run['name']}_g{run['gate']}"
     tprime_cfg = config['tprime']
     sync_root = _catgt_sync_root(run, config)
-    tostream = sync_root / f"catgt_{run_str}" / tprime_cfg['tostream_file'].format(run=run_str)
+    ni_dir = sync_root / f"catgt_{run_str}"
+
+    tostream_patterns = tprime_cfg['tostream_file']
+    if isinstance(tostream_patterns, str):
+        tostream_patterns = [tostream_patterns]
+    tostream_patterns = [p.format(run=run_str) for p in tostream_patterns]
+    tostream = _resolve_sync_file(tostream_patterns, ni_dir, 'tostream (NI sync)')
 
     for prb in run['probes']:
-        fromstream = sync_root / f"catgt_{run_str}" / f"{run_str}_imec{prb}" / tprime_cfg['fromstream_file'].format(run=run_str, prb=prb)
+        prb_dir = ni_dir / f"{run_str}_imec{prb}"
+
+        fromstream_patterns = tprime_cfg['fromstream_file']
+        if isinstance(fromstream_patterns, str):
+            fromstream_patterns = [fromstream_patterns]
+        fromstream_patterns = [p.format(run=run_str, prb=prb) for p in fromstream_patterns]
+        fromstream = _resolve_sync_file(fromstream_patterns, prb_dir, f'fromstream (probe {prb} sync)')
+
         spike_in_txt  = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec.txt'
         spike_out_txt = ks4_dir(run, prb, config) / 'sorter_output' / 'spike_times_sec_adj.txt'
         spike_out_npy = spike_out_txt.with_suffix('.npy')
@@ -311,12 +342,8 @@ def run_tprime(run, config):
             print(f"  [TPrime] Output exists for probe {prb}, skipping.")
             continue
 
-        missing = [p for p in [tostream, fromstream, spike_in_txt] if not p.exists()]
-        if missing:
-            raise FileNotFoundError(
-                f"[TPrime] Missing input files for probe {prb}:\n" +
-                "\n".join(f"  {p}" for p in missing)
-            )
+        if not spike_in_txt.exists():
+            raise FileNotFoundError(f"[TPrime] Spike times input not found: {spike_in_txt}")
 
         cmd = [
             config['tprime_bin'],

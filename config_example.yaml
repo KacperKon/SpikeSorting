@@ -56,8 +56,14 @@ tprime:
   sync_period: 1.0   # period (seconds) of the sync pulse used for alignment
   # File name patterns for the sync edge files written by CatGT.
   # {run} and {prb} are filled in automatically by the pipeline.
-  tostream_file: "{run}_tcat.nidq.xd_8_0_500.txt"
-  fromstream_file: "{run}_tcat.imec{prb}.ap.xd_384_6_500.txt"
+  # A list of patterns is tried in order; the first one found on disk is used.
+  # This lets a single config work across recordings made with different CatGT settings.
+  tostream_file:
+    - "{run}_tcat.nidq.xd_8_0_500.txt"    # current recordings (XD digital extraction)
+    - "{run}_tcat.nidq.XA_0_500.txt"       # older recordings (XA analog extraction)
+  fromstream_file:
+    - "{run}_tcat.imec{prb}.ap.xd_384_6_500.txt"   # current recordings
+    - "{run}_tcat.imec{prb}.ap.SY_384_6_500.txt"   # older recordings
 
 
 # --- Kilosort 4 parameters ---
