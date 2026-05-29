@@ -17,8 +17,23 @@ Automated pipeline for sorting Neuropixels recordings acquired with SpikeGLX.
 | TPrime | standalone binary, same site |
 | `screen` | usually pre-installed; `sudo apt install screen` if missing |
 
-### Setting up the `si_ks4` environment
+### Setting up environments
 
+The `envs/` folder contains exact lock files exported from the working Linux installation.
+This is the fastest path to a working setup:
+
+```bash
+micromamba env create -f envs/si_ks4.yml
+micromamba env create -f envs/curation.yml
+```
+
+> **Note:** These files target Linux x86_64 with CUDA. They will not resolve on macOS or Windows,
+> which is expected — Kilosort 4 requires a Linux GPU machine.
+
+<details>
+<summary>Manual install (if the lock files don't work on your system)</summary>
+
+**`si_ks4` environment:**
 ```bash
 micromamba create -n si_ks4 python=3.11
 micromamba activate si_ks4
@@ -26,8 +41,7 @@ pip install spikeinterface[full,widgets]
 pip install kilosort
 ```
 
-### Setting up the `curation` environment
-
+**`curation` environment:**
 ```bash
 micromamba create -n curation python=3.11
 micromamba activate curation
@@ -40,10 +54,20 @@ uv pip install ./UnitRefine
 # Bombcell (Python)
 uv pip install bombcell
 ```
+</details>
 
 To launch the UnitRefine GUI for manual inspection:
 ```bash
 uv run --directory UnitRefine unitrefine --project_folder my_project
+```
+
+#### Updating the lock files
+
+After installing or upgrading packages, regenerate the lock files and commit them:
+```bash
+bash envs/export.sh
+git add envs/si_ks4.yml envs/curation.yml
+git commit -m "Update environment lock files"
 ```
 
 ---
