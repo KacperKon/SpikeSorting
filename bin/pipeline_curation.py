@@ -144,7 +144,9 @@ def run_bombcell(run, prb, config):
     np.memmap = _ReadOnlyMemmap
 
     import joblib
+    import sys
     _orig_parallel = joblib.Parallel
+    _bc_patched = {}
     n_jobs_bombcell = (config.get('bombcell') or {}).get('n_jobs')
     if n_jobs_bombcell is not None:
         class _NJobsParallel(joblib.Parallel):
@@ -152,6 +154,10 @@ def run_bombcell(run, prb, config):
                 kwargs['n_jobs'] = n_jobs_bombcell
                 super().__init__(*args, **kwargs)
         joblib.Parallel = _NJobsParallel
+        for mod_name, mod in sys.modules.items():
+            if 'bombcell' in mod_name and hasattr(mod, 'Parallel'):
+                _bc_patched[mod_name] = mod.Parallel
+                mod.Parallel = _NJobsParallel
 
     try:
         quality_metrics, param, unit_type, unit_type_string = bc.run_bombcell(
@@ -160,6 +166,13 @@ def run_bombcell(run, prb, config):
     finally:
         np.memmap = _orig_memmap
         joblib.Parallel = _orig_parallel
+        for mod_name, orig in _bc_patched.items():
+            sys.modules[mod_name].Parallel = orig
+        try:
+            from joblib.externals.loky import get_reusable_executor
+            get_reusable_executor().shutdown(wait=True, kill_workers=True)
+        except Exception:
+            pass
 
     labels_df = pd.DataFrame({
         'unit_id': range(len(unit_type_string)),
