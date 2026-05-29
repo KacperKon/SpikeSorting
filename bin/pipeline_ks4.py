@@ -311,6 +311,13 @@ def run_tprime(run, config):
             print(f"  [TPrime] Output exists for probe {prb}, skipping.")
             continue
 
+        missing = [p for p in [tostream, fromstream, spike_in_txt] if not p.exists()]
+        if missing:
+            raise FileNotFoundError(
+                f"[TPrime] Missing input files for probe {prb}:\n" +
+                "\n".join(f"  {p}" for p in missing)
+            )
+
         cmd = [
             config['tprime_bin'],
             f"-syncperiod={tprime_cfg['sync_period']}",
