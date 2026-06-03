@@ -174,8 +174,9 @@ def run_bombcell(run, prb, config):
         except Exception:
             pass
 
+    unit_ids = np.unique(np.load(ks_dir / 'spike_clusters.npy'))
     labels_df = pd.DataFrame({
-        'unit_id': range(len(unit_type_string)),
+        'unit_id': unit_ids,
         'label': unit_type_string,
     })
     labels_df.to_csv(out_path, index=False)
