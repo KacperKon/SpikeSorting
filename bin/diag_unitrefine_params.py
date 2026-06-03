@@ -64,7 +64,7 @@ def main():
         for k, v in qm_params.items():
             print(f"    {k}: {v}")
         if model_info:
-            model_qm = model_info.get('quality_metric_params', {})
+            model_qm = model_info.get('metric_params', {}).get('quality_metric_params', {})
             model_names = set(model_qm.get('metric_names', []))
             stored_names = set(qm_params.get('metric_names') or [])
             missing = model_names - stored_names
@@ -86,7 +86,7 @@ def main():
         for k, v in tm_params.items():
             print(f"    {k}: {v}")
         if model_info:
-            model_tm = model_info.get('template_metric_params', {})
+            model_tm = model_info.get('metric_params', {}).get('template_metric_params', {})
             model_names = set(model_tm.get('metric_names', []))
             stored_names = set(tm_params.get('metric_names') or [])
             missing = model_names - stored_names
