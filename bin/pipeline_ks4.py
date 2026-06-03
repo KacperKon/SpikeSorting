@@ -249,9 +249,14 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
         print(f"  [{_ts()}] [Postprocessing] Recomputing metrics for probe {prb}...")
         si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
         analyzer = si.load_sorting_analyzer(ana_dir)
-        analyzer.set_temporary_recording(recording)
-        _run_si_extensions(analyzer, max_spikes_per_unit, config, prb)
-        return analyzer
+        try:
+            analyzer.set_temporary_recording(recording)
+        except ValueError as e:
+            print(f"  [Postprocessing] Warning: recording mismatch ({e}). Recreating analyzer from scratch.")
+            shutil.rmtree(ana_dir)
+        else:
+            _run_si_extensions(analyzer, max_spikes_per_unit, config, prb)
+            return analyzer
 
     print(f"  [{_ts()}] [Postprocessing] Starting SpikeInterface postprocessing for probe {prb}...")
     si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
