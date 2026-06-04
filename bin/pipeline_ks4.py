@@ -246,17 +246,9 @@ def load_or_run_postprocessing(sorting, recording, run, prb, config):
     max_spikes_per_unit = config.get('max_spikes_per_unit', 500)
 
     if config.get('force_rerun_metrics') and not config.get('force_rerun_kilosort') and ana_dir.exists():
-        print(f"  [{_ts()}] [Postprocessing] Recomputing metrics for probe {prb}...")
+        print(f"  [{_ts()}] [Postprocessing] Deleting existing analyzer and recomputing from scratch for probe {prb}...")
         si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)
-        analyzer = si.load_sorting_analyzer(ana_dir)
-        try:
-            analyzer.set_temporary_recording(recording)
-        except ValueError as e:
-            print(f"  [Postprocessing] Warning: recording mismatch ({e}). Recreating analyzer from scratch.")
-            shutil.rmtree(ana_dir)
-        else:
-            _run_si_extensions(analyzer, max_spikes_per_unit, config, prb)
-            return analyzer
+        shutil.rmtree(ana_dir)
 
     print(f"  [{_ts()}] [Postprocessing] Starting SpikeInterface postprocessing for probe {prb}...")
     si.set_global_job_kwargs(n_jobs=config.get('n_jobs', 4), chunk_duration=chunk_duration)

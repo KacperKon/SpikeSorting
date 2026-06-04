@@ -4,7 +4,9 @@ Pipeline:
 Data processing / general
 
 8) Rerun TPrime for the recording 240308_KK102 ?
-9) Create a file allowing to export the final micromamba environments
+9) Update and commit environment lock files (envs/si_ks4.yml, envs/curation.yml) after downgrading both to spikeinterface==0.103.2
+11) Move SI postprocessing (SortingAnalyzer creation, waveforms, metrics) from pipeline_ks4.py to pipeline_curation.py — curation already needs the .bin for Bombcell, so no new dependency
+12) Fix clear_local_copy logic — currently deletes .bin after sorting, but curation (Bombcell + future SI waveforms) still needs it; should only clear after curation completes
 
 
 Done:
