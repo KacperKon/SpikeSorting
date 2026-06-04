@@ -4,7 +4,6 @@ Pipeline:
 Data processing / general
 
 8) Rerun TPrime for the recording 240308_KK102 ?
-9) Update and commit environment lock files (envs/si_ks4.yml, envs/curation.yml)
 
 
 Done:
@@ -28,4 +27,5 @@ Done:
 -) Change folder structure? After running, I want to easily verify results with UnitRefine GUI
 -) A stupid question: the log files are extremely long becayse they print the progress bar that Spike Interface gives out as multiple sepaarte lines. Is there a better way?
 12) Fix clear_local_copy logic — now clears at end of curation, not sorting
+9) Update and commit environment lock files (envs/si_ks4.yml, envs/curation.yml)
 
