@@ -546,10 +546,10 @@ def plot_unit_page(unit_id, unit_idx, ext_data, ks_labels, ur_labels, ur_conf, b
 
     cell_type_rows = [
         # (label, si_value, bc_value)
-        # SI 0.103.2 metric names; values already in ms
-        ('Trough-to-peak (ms)', val(tm, 'peak_to_valley', '.3f'),
+        # SI 0.103.2 metric names; peak_to_valley and half_width stored in seconds
+        ('Trough-to-peak (ms)', val(tm, 'peak_to_valley', '.3f', 1000.0),
                                 bc_val('waveformDuration_peakTrough', '.3f', 0.001)),
-        ('Half-width (ms)',     val(tm, 'half_width', '.3f'),
+        ('Half-width (ms)',     val(tm, 'half_width', '.3f', 1000.0),
                                 bc_val('mainTrough_width', '.3f', 1000.0 / fs)),
         ('Peak/trough ratio',   val(tm, 'peak_trough_ratio', '.3f'),
                                 bc_val('mainPeakToTroughRatio', '.3f')),
