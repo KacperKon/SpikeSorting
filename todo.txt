@@ -4,18 +4,16 @@ Pipeline:
 Data processing / general
 
 8) Rerun TPrime for the recording 240308_KK102 ?
-9) Update and commit environment lock files (envs/si_ks4.yml, envs/curation.yml) after downgrading both to spikeinterface==0.103.2
-11) Move SI postprocessing (SortingAnalyzer creation, waveforms, metrics) from pipeline_ks4.py to pipeline_curation.py — curation already needs the .bin for Bombcell, so no new dependency
-12) Fix clear_local_copy logic — currently deletes .bin after sorting, but curation (Bombcell + future SI waveforms) still needs it; should only clear after curation completes
+9) Update and commit environment lock files (envs/si_ks4.yml, envs/curation.yml)
 
 
 Done:
-1) Make sure that the script still runs after disconnecting remote connection 
+1) Make sure that the script still runs after disconnecting remote connection
 (that it doesn't kill the terminal)
 3) Double check if all important quality metrics from SpikeInterface are implemented
 0) Make git repo with remote to avoid copy-pasting between laptop and workstation.
 7) Optional - update SpikeInterface and Kilosort?
-2) Add the 'force rerun' option to all the other pipeline elements 
+2) Add the 'force rerun' option to all the other pipeline elements
 (TPrime, quality metrics)
 4) Save 'spike_times_sec' in the sorter folder, where the 'spike_times' are
 5) Install CatGT and TPrime on the Linux machine
@@ -29,5 +27,5 @@ Done:
  ---> Should we change the njobs in KS / SI / Bombcell after this step?
 -) Change folder structure? After running, I want to easily verify results with UnitRefine GUI
 -) A stupid question: the log files are extremely long becayse they print the progress bar that Spike Interface gives out as multiple sepaarte lines. Is there a better way?
-
+12) Fix clear_local_copy logic — now clears at end of curation, not sorting
 

@@ -150,8 +150,8 @@ force_rerun_report: false    # set true to regenerate the per-unit PDF report
 copy_raw_to_local: true     # set true to copy raw .bin to local storage first
 catgt_local: /mnt/raidstorage/tmp_kilosort   # local path for the copy (required if copy_raw_to_local: true)
                              # e.g. /mnt/raidstorage/local_raw
-clear_local_copy: false      # set true to delete the local copy after successful completion
-                             # useful during debugging to force a fresh copy each run
+clear_local_copy: false      # set true to delete the local .bin copy after curation completes
+                             # (deletion happens at end of curation, not sorting, so Bombcell still has access)
 
 
 # --- Quality metrics settings ---

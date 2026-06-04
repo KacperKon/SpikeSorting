@@ -66,6 +66,16 @@ def catgt_bin_path(run, prb, config):
     return prb_dir / f"{run_str}_tcat.imec{prb}.ap.bin"
 
 
+def clear_local_bin(run, prb, config):
+    run_str = f"{run['name']}_g{run['gate']}"
+    prb_dir = Path(config['catgt_local']) / f"catgt_{run_str}" / f"{run_str}_imec{prb}"
+    for suffix in ['.ap.bin', '.ap.meta']:
+        f = prb_dir / f"{run_str}_tcat.imec{prb}{suffix}"
+        if f.exists():
+            f.unlink()
+            print(f"  [LocalCopy] Deleted {f.name}")
+
+
 # --- Curation steps ---
 
 def run_unitrefine(run, prb, config):
@@ -192,6 +202,9 @@ def process_run(run, config):
     for prb in run['probes']:
         run_unitrefine(run, prb, config)
         run_bombcell(run, prb, config)
+    if config.get('copy_raw_to_local') and config.get('clear_local_copy'):
+        for prb in run['probes']:
+            clear_local_bin(run, prb, config)
 
 
 def main():

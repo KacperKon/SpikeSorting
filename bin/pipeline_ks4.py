@@ -405,9 +405,6 @@ def process_run(run, config):
         load_or_run_postprocessing(sorting, recording, run, prb, config)
         export_spike_times_for_tprime(sorting, recording, run, prb, config)
     run_tprime(run, config)
-    if config.get('copy_raw_to_local') and config.get('clear_local_copy'):
-        for prb in run['probes']:
-            clear_local_bin(run, prb, config)
 
 
 def _process_run_worker(run, config):

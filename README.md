@@ -11,8 +11,8 @@ Automated pipeline for sorting Neuropixels recordings acquired with SpikeGLX.
 | Tool | Notes |
 |------|-------|
 | [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html) | package manager |
-| `si_ks4` micromamba environment | SpikeInterface + Kilosort 4 (see below) |
-| `curation` micromamba environment | SpikeInterface + UnitRefine dependencies (see below) |
+| `si_ks4` micromamba environment | SpikeInterface 0.103.2 + Kilosort 4 (see below) |
+| `curation` micromamba environment | SpikeInterface 0.104.x + UnitRefine + Bombcell (see below) |
 | CatGT | standalone binary, Linux version from https://billkarsh.github.io/SpikeGLX |
 | TPrime | standalone binary, same site |
 | `screen` | usually pre-installed; `sudo apt install screen` if missing |
@@ -37,9 +37,15 @@ micromamba env create -f envs/curation.yml
 ```bash
 micromamba create -n si_ks4 python=3.11
 micromamba activate si_ks4
-pip install spikeinterface[full,widgets]
+pip install "spikeinterface[full,widgets]==0.103.2"
 pip install kilosort
 ```
+
+> **Why 0.103.2?** The UnitRefine mice-SUA classifier was trained on metrics computed with
+> SpikeInterface 0.102.x. In 0.104.0, SI renamed 22/37 quality and template metrics (e.g.
+> `peak_to_valley` → `peak_to_trough_duration`, `isolation_distance` → `mahalanobis`).
+> Using 0.103.2 here ensures the stored metric names match what the classifier expects.
+> Do **not** upgrade SI in this environment without retraining or replacing the UnitRefine model.
 
 **`curation` environment:**
 ```bash
@@ -54,6 +60,11 @@ uv pip install ./UnitRefine
 # Bombcell (Python)
 uv pip install bombcell
 ```
+
+> **Why a separate SI version here?** The `model_based_label_units` function used to apply
+> the UnitRefine model was added in SI 0.104.x and is not available in 0.103.2. The `curation`
+> env therefore runs a newer SI, but only uses it to load the analyzer (written by `si_ks4`)
+> and apply the classifier — it does not recompute any metrics.
 </details>
 
 To launch the UnitRefine GUI for manual inspection:
