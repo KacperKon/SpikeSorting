@@ -21,6 +21,8 @@ import sys
 import shutil
 import subprocess
 import multiprocessing
+import threading
+import time
 import traceback
 import numpy as np
 from datetime import datetime
@@ -53,6 +55,12 @@ def raw_recording_parent(run, config):
     """
     root = Path(config['npx_directory'])
     run_str = f"{run['name']}_g{run['gate']}"
+
+    # A completed prefetch (see prefetch_raw) takes precedence over the network copy.
+    if config.get('prefetch_raw') and config.get('raw_local'):
+        if (Path(config['raw_local']) / run_str).is_dir():
+            print(f"  [Prefetch] Using local raw copy: {Path(config['raw_local']) / run_str}")
+            return Path(config['raw_local'])
 
     if (root / run_str).is_dir():
         return root
@@ -356,6 +364,13 @@ def run_tprime(run, config):
 
 def copy_bin_to_local(run, prb, config):
     run_str = f"{run['name']}_g{run['gate']}"
+    # If CatGT is forced to rerun and writes straight into catgt_local, any copied
+    # file would just be overwritten by CatGT, so skip the (slow) copy.
+    if (config.get('force_rerun_catgt')
+            and Path(config['catgt_local']).resolve() == Path(config['catgt_write']).resolve()):
+        print(f"  [LocalCopy] force_rerun_catgt and catgt_local == catgt_write: "
+              f"CatGT will write probe {prb} locally, skipping copy.")
+        return
     src_root = None
     for candidate in [config['catgt_read'], config['catgt_write']]:
         if (Path(candidate) / f"catgt_{run_str}").exists():
@@ -394,6 +409,93 @@ def clear_local_bin(run, prb, config):
             print(f"  [LocalCopy] Deleted {f.name}")
 
 
+def _raw_network_parent(run, config):
+    # raw_recording_parent without the prefetch override.
+    return raw_recording_parent(run, {**config, 'prefetch_raw': False})
+
+
+def _raw_ap_bytes(run, config):
+    # Size of the raw AP data CatGT will read for a run (~ size of its tcat output).
+    run_str = f"{run['name']}_g{run['gate']}"
+    try:
+        src_dir = raw_recording_parent(run, config) / run_str
+        return sum(f.stat().st_size for prb in run['probes']
+                   for f in (src_dir / f"{run_str}_imec{prb}").glob(f"{run_str}_t*.imec{prb}.ap.bin"))
+    except Exception:
+        return 0
+
+
+def prefetch_raw(run, config, reserve_bytes=0):
+    """
+    Copy one run's raw SpikeGLX folder from npx_directory to raw_local, so CatGT
+    reads it from local disk. Runs in a background thread while the previous run
+    is processed. Only the files CatGT uses are copied (top-level NI/OneBox files
+    and the folders of the probes being sorted; LF files only if -lf is requested).
+    The copy goes to '<run>.partial' and is renamed when complete, so a half-done
+    copy is never used. Never raises: on failure the run reads from the network.
+    """
+    run_str = f"{run['name']}_g{run['gate']}"
+    try:
+        dst = Path(config['raw_local']) / run_str
+        if dst.is_dir():
+            print(f"  [Prefetch] {run_str} already local, skipping.")
+            return
+        if not config.get('force_rerun_catgt') and all(
+                catgt_bin_path(run, prb, config).exists() for prb in run['probes']):
+            print(f"  [Prefetch] CatGT output exists for {run_str}, raw not needed.")
+            return
+
+        src_dir = _raw_network_parent(run, config) / run_str
+        want_lf = '-lf' in config.get('catgt_cmd_string', '').split()
+        probe_dirs = {f"{run_str}_imec{prb}" for prb in run['probes']}
+        files = []
+        for p in src_dir.iterdir():
+            if p.is_file():
+                files.append(p)
+            elif p.is_dir() and p.name in probe_dirs:
+                files.extend(f for f in p.rglob('*') if f.is_file())
+        # Only SpikeGLX data files; skips leftovers like '*.ap.bin.retry1.part'.
+        files = [f for f in files if f.suffix in ('.bin', '.meta')]
+        if not want_lf:
+            files = [f for f in files if '.lf.' not in f.name]
+        total = sum(f.stat().st_size for f in files)
+
+        Path(config['raw_local']).mkdir(parents=True, exist_ok=True)
+        margin = config.get('raw_free_margin_gb', 50) * 1e9
+        # reserve_bytes: space the run being processed meanwhile will still write
+        # (its CatGT output), if on the same disk.
+        free = shutil.disk_usage(config['raw_local']).free
+        if free - total - reserve_bytes < margin:
+            print(f"  [Prefetch] Not enough space for {run_str} ({total/1e9:.1f} GB needed, "
+                  f"{free/1e9:.1f} GB free, {reserve_bytes/1e9:.1f} GB reserved for CatGT, "
+                  f"{margin/1e9:.0f} GB margin). Will read from network.")
+            return
+
+        partial = dst.with_name(dst.name + '.partial')
+        if partial.exists():
+            shutil.rmtree(partial)
+        print(f"  [{_ts()}] [Prefetch] Copying raw {run_str} ({total/1e9:.1f} GB) "
+              f"to {config['raw_local']} in background...")
+        t0 = time.time()
+        for f in files:
+            out = partial / f.relative_to(src_dir)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(f, out)
+        partial.rename(dst)
+        print(f"  [{_ts()}] [Prefetch] Done {run_str} in {(time.time() - t0)/60:.1f} min.")
+    except Exception as e:
+        print(f"  [{_ts()}] [Prefetch] Failed for {run_str}: {e!r}. Will read from network.")
+
+
+def clear_raw_local(run, config):
+    run_str = f"{run['name']}_g{run['gate']}"
+    for name in (run_str, run_str + '.partial'):
+        d = Path(config['raw_local']) / name
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+            print(f"  [Prefetch] Deleted local raw copy {name}")
+
+
 def process_run(run, config):
     print(f"\n{'='*60}\n[{_ts()}] Processing: {run['name']}\n{'='*60}")
     if config.get('copy_raw_to_local'):
@@ -424,10 +526,33 @@ def main():
     if config.get('copy_raw_to_local') and not config.get('catgt_local'):
         raise ValueError("copy_raw_to_local is true but catgt_local is not set in config.")
 
+    prefetch = bool(config.get('prefetch_raw'))
+    if prefetch and not config.get('raw_local'):
+        raise ValueError("prefetch_raw is true but raw_local is not set in config.")
+
     timeout_s = config.get('run_timeout_hours', 12) * 3600
     failed = []
+    runs = config['runs']
+    pending = None  # background prefetch thread for the run about to start
 
-    for run in config['runs']:
+    for i, run in enumerate(runs):
+        if pending is not None:
+            if pending.is_alive():
+                print(f"\n[{_ts()}] [Prefetch] Waiting for raw copy of {run['name']} to finish...")
+            pending.join()
+        # Copy the next run's raw data while this one is processed. The first run
+        # reads from the network directly (copying it first would only add delay).
+        pending = None
+        if prefetch and i + 1 < len(runs):
+            reserve = 0
+            same_disk = (Path(config['catgt_write']).exists() and Path(config['raw_local']).exists()
+                         and Path(config['catgt_write']).stat().st_dev == Path(config['raw_local']).stat().st_dev)
+            if same_disk and (config.get('force_rerun_catgt') or not all(
+                    catgt_bin_path(run, prb, config).exists() for prb in run['probes'])):
+                reserve = _raw_ap_bytes(run, config)
+            pending = threading.Thread(target=prefetch_raw, args=(runs[i + 1], config, reserve), daemon=True)
+            pending.start()
+
         p = multiprocessing.Process(target=_process_run_worker, args=(run, config))
         p.start()
         p.join(timeout=timeout_s)
@@ -442,6 +567,9 @@ def main():
             failed.append((run['name'], 'timeout'))
         elif p.exitcode != 0:
             failed.append((run['name'], f'exit code {p.exitcode}'))
+
+        if prefetch and config.get('clear_raw_local', True):
+            clear_raw_local(run, config)
 
     if failed:
         print(f"\n[{_ts()}] Runs that did not complete:")

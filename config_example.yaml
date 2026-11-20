@@ -30,6 +30,18 @@ catgt_write:   /mnt/raidstorage/tmp_kilosort
 output_dir:    /mnt/raidstorage/sort
 
 
+# --- Raw data download ---
+# Run automatically by run_pipeline.sh (via bin/download_raw_data.py) before
+# sorting starts. For each run under `runs:`, data is located in this order:
+#   1. npx_directory     -- already there, nothing to do.
+#   2. legacy_raw_dirs    -- older lab servers with the same {name}_g{gate}
+#                            layout, tried in order, copied to npx_directory.
+# Optional -- omit to skip.
+legacy_raw_dirs:
+  - /mnt/haeslerlabwip2024/haeslerlabwip2023/raw_data/ephys
+  - /mnt/haeslerlabwip2024/haeslerlabwip2020/raw_data/ephys
+
+
 # --- Tool binaries ---
 catgt_bin: /home/euclient/kacper/SpikeSorting/CatGT-linux/runit.sh    # path to CatGT
 tprime_bin: /home/euclient/kacper/SpikeSorting/TPrime-linux/runit.sh  # path to TPrime
@@ -137,11 +149,23 @@ force_rerun_tprime: false    # set true to redo TPrime alignment
 force_rerun_unitrefine: false # set true to redo UnitRefine classification
 force_rerun_bombcell: false  # set true to redo Bombcell quality metrics
 force_rerun_report: false    # set true to regenerate the per-unit PDF report
+force_rerun_download: false  # set true to re-fetch raw data (bin/download_raw_data.py) from
+                             # legacy_raw_dirs even if it's already under npx_directory;
+                             # keeps the existing copy if no legacy dir has it
 
 # --- Report copy ---
 # Optional: copy finished report PDFs to a shared location after generation.
 # Leave commented out (or omit) to skip copying.
 # report_copy_dir: /mnt/haesler_scratch/users/kacper
+
+# --- Output sync (bin/sync_outputs.py, run automatically at the end of run_pipeline.sh) ---
+# Mirrors each run's full imec{N}_ks4 folder (report, analyzer, bombcell,
+# sorter_output) plus the raw CatGT-filtered tcat.imec{N}.ap.meta (metadata
+# only, not the multi-GB .ap.bin -- read from catgt_read/catgt_write/catgt_local,
+# whichever has it) to
+# shared/archival storage, alongside other sessions.
+# Optional -- leave commented out to skip syncing.
+# ephys_sorted_dir: /mnt/haesler_scratch/preprocessed_data/ephys_sorted
 
 # --- Local copy settings ---
 # Speeds up processing when the raw .bin lives on a slow network mount.
@@ -152,6 +176,21 @@ catgt_local: /mnt/raidstorage/tmp_kilosort   # local path for the copy (required
                              # e.g. /mnt/raidstorage/local_raw
 clear_local_copy: false      # set true to delete the local .bin copy after curation completes
                              # (deletion happens at end of curation, not sorting, so Bombcell still has access)
+
+# --- Raw data prefetch (bin/pipeline_ks4.py) ---
+# While one run is processed, the next run's raw SpikeGLX folder is copied
+# from npx_directory to raw_local so CatGT reads it from local disk.
+prefetch_raw: false
+# raw_local: /mnt/raidstorage/raw_prefetch   # required if prefetch_raw: true
+clear_raw_local: true        # delete a run's raw copy once that run is sorted
+raw_free_margin_gb: 50       # skip prefetch if it would leave less than this free
+
+# --- Streaming mode (bin/run_pipeline_streaming.sh) ---
+# Processes one run at a time end-to-end (sort -> curate -> report -> sync), then
+# uploads the run to ephys_sorted_dir (required), checks it arrived, and deletes
+# the run's local raw/CatGT/output files to save local disk space.
+stream_cleanup: true         # set false to keep local files after upload
+sync_catgt_bin: false        # set true to also upload the multi-GB CatGT .bin files
 
 
 # --- Quality metrics settings ---
